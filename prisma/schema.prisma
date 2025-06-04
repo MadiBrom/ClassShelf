@@ -36,7 +36,6 @@ model Student {
   teacherId  Int
   name       String
   email      String?
-  notes      String?
   createdAt  DateTime  @default(now())
   checkouts  Checkout[]
 }
