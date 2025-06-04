@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Teacher {
+  id         Int       @id @default(autoincrement())
+  name       String
+  email      String    @unique
+  password   String
+  createdAt  DateTime  @default(now())
+  books      Book[]
+  students   Student[]
+}
+
+model Book {
+  id          Int       @id @default(autoincrement())
+  teacher     Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId   Int
+  title       String
+  author      String?
+  isbn        String?
+  coverUrl    String?
+  description String?
+  createdAt   DateTime  @default(now())
+  checkouts   Checkout[]
+}
+
+model Student {
+  id         Int       @id @default(autoincrement())
+  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId  Int
+  name       String
+  email      String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+  checkouts  Checkout[]
+}
+
+model Checkout {
+  id          Int       @id @default(autoincrement())
+  book        Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookId      Int
+  student     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   Int
+  checkoutDate DateTime
+  returnDate   DateTime?
+  isReturned   Boolean  @default(false)
+}
