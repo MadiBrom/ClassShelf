@@ -7,15 +7,15 @@ import Login from "./components/login.jsx";
 import Student from "./components/Profiles/student.jsx";
 import Teacher from "./components/Profiles/teacher.jsx";
 
-const App = () => {
+function App() {
   const [role, setRole] = useState("");
 
-  useEffect(() => {
+  useEffect(function () {
     const storedRole = window.localStorage.getItem("classShelfRole") || "";
     setRole(storedRole);
   }, []);
 
-  const handleRoleChange = (nextRole) => {
+  function handleRoleChange(nextRole) {
     if (!nextRole) {
       window.localStorage.removeItem("classShelfRole");
       setRole("");
@@ -23,11 +23,16 @@ const App = () => {
     }
     window.localStorage.setItem("classShelfRole", nextRole);
     setRole(nextRole);
-  };
+  }
 
   return (
     <div className="min-h-screen">
-      <Navbar role={role} onLogout={() => handleRoleChange("")} />
+      <Navbar
+        role={role}
+        onLogout={function () {
+          return handleRoleChange("");
+        }}
+      />
 
       <main className="p-4">
         <Routes>
@@ -64,6 +69,6 @@ const App = () => {
       </main>
     </div>
   );
-};
+}
 
 export default App;

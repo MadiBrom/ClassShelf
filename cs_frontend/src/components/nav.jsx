@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const Navbar = ({ role, onLogout }) => {
+export default function Navbar ({ role, onLogout }) {
   return (
     <nav className="nav">
       <div className="nav__brand">ClassShelf</div>
@@ -24,4 +24,4 @@ const Navbar = ({ role, onLogout }) => {
   );
 };
 
-export default Navbar;
+Navbar;

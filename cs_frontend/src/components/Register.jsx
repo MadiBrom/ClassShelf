@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const Register = ({ onRegister }) => {
+export default function Register ({ onRegister }) {
   const [role, setRole] = useState("teacher");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (event) => {
+  function handleSubmit(event) {
     event.preventDefault();
     onRegister(role);
     navigate(role === "teacher" ? "/teacher" : "/student");
-  };
+  }
 
   return (
     <div className="panel">
@@ -22,7 +22,12 @@ const Register = ({ onRegister }) => {
       <form className="stack" onSubmit={handleSubmit}>
         <label className="control">
           Role
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
+          <select
+            value={role}
+            onChange={function (event) {
+              setRole(event.target.value);
+            }}
+          >
             <option value="teacher">Teacher</option>
             <option value="student">Student</option>
           </select>
@@ -32,7 +37,9 @@ const Register = ({ onRegister }) => {
           <input
             type="text"
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={function (event) {
+              setName(event.target.value);
+            }}
             placeholder="Avery Johnson"
           />
         </label>
@@ -41,7 +48,9 @@ const Register = ({ onRegister }) => {
           <input
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={function (event) {
+              setEmail(event.target.value);
+            }}
             placeholder="you@classshelf.com"
           />
         </label>
@@ -51,4 +60,4 @@ const Register = ({ onRegister }) => {
   );
 };
 
-export default Register;
+Register;

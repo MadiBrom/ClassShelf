@@ -52,7 +52,7 @@ const initialCheckouts = [
 
 const MAX_BAG = 5;
 
-const Library = ({ initialRole = "teacher" }) => {
+export default function Library ({ initialRole = "teacher" }) {
   const [role, setRole] = useState(initialRole);
   const [catalog, setCatalog] = useState(initialCatalog);
   const [shelf, setShelf] = useState(initialShelf);
@@ -78,53 +78,62 @@ const Library = ({ initialRole = "teacher" }) => {
   const [feedback, setFeedback] = useState("");
   const idCounter = useRef(10);
 
-  const createId = (prefix) => {
+  function createId(prefix) {
     idCounter.current += 1;
     return `${prefix}-${idCounter.current}`;
-  };
+  }
 
-  const activeStudent = useMemo(
-    () => students.find((student) => student.id === activeStudentId),
-    [students, activeStudentId]
-  );
+  const activeStudent = useMemo(function () {
+    return students.find(function (student) {
+      return student.id === activeStudentId;
+    });
+  }, [students, activeStudentId]);
 
-  const shelfItems = useMemo(() => {
-    return shelf.map((entry) => {
-      const book = catalog.find((item) => item.id === entry.bookId);
+  const shelfItems = useMemo(function () {
+    return shelf.map(function (entry) {
+      const book = catalog.find(function (item) {
+        return item.id === entry.bookId;
+      });
       const checkedOut = entry.total - entry.available;
       return { ...entry, book, checkedOut };
     });
   }, [catalog, shelf]);
 
-  const activeCheckouts = useMemo(
-    () => checkouts.filter((checkout) => checkout.status === "checked_out"),
-    [checkouts]
-  );
+  const activeCheckouts = useMemo(function () {
+    return checkouts.filter(function (checkout) {
+      return checkout.status === "checked_out";
+    });
+  }, [checkouts]);
 
-  const studentCheckouts = useMemo(() => {
-    return activeCheckouts.filter(
-      (checkout) => checkout.studentId === activeStudentId
-    );
+  const studentCheckouts = useMemo(function () {
+    return activeCheckouts.filter(function (checkout) {
+      return checkout.studentId === activeStudentId;
+    });
   }, [activeCheckouts, activeStudentId]);
 
-  const studentRequests = useMemo(() => {
-    return requests.filter((request) => request.studentId === activeStudentId);
+  const studentRequests = useMemo(function () {
+    return requests.filter(function (request) {
+      return request.studentId === activeStudentId;
+    });
   }, [requests, activeStudentId]);
 
-  const getShelfEntry = (bookId) =>
-    shelf.find((entry) => entry.bookId === bookId);
+  function getShelfEntry(bookId) {
+    return shelf.find(function (entry) {
+      return entry.bookId === bookId;
+    });
+  }
 
-  const updateShelf = (bookId, updater) => {
-    setShelf((prev) =>
-      prev.map((entry) =>
-        entry.bookId === bookId ? updater(entry) : entry
-      )
-    );
-  };
+  function updateShelf(bookId, updater) {
+    setShelf(function (prev) {
+      return prev.map(function (entry) {
+        return entry.bookId === bookId ? updater(entry) : entry;
+      });
+    });
+  }
 
-  const findCatalogMatch = (candidate) => {
+  function findCatalogMatch(candidate) {
     if (!candidate) return null;
-    return catalog.find((book) => {
+    return catalog.find(function (book) {
       if (book.isbn && candidate.isbn && book.isbn === candidate.isbn) {
         return true;
       }
@@ -137,9 +146,9 @@ const Library = ({ initialRole = "teacher" }) => {
           candidate.authors.join(",").toLowerCase()
       );
     });
-  };
+  }
 
-  const handleSearch = async (event) => {
+  async function handleSearch(event) {
     event.preventDefault();
     setFeedback("");
     const query = searchQuery.trim();
@@ -148,13 +157,17 @@ const Library = ({ initialRole = "teacher" }) => {
       return;
     }
 
-    const localResults = catalog.filter((book) => {
+    const localResults = catalog.filter(function (book) {
       const target = `${book.title} ${book.authors.join(" ")} ${book.isbn || ""}`;
       return target.toLowerCase().includes(query.toLowerCase());
     });
 
     if (localResults.length) {
-      setSearchResults(localResults.map((book) => ({ ...book, source: "catalog" })));
+      setSearchResults(
+        localResults.map(function (book) {
+          return { ...book, source: "catalog" };
+        })
+      );
       setSearchSource("catalog");
       return;
     }
@@ -168,21 +181,23 @@ const Library = ({ initialRole = "teacher" }) => {
     }
 
     setSearchResults(
-      googleResults.map((result) => ({
-        id: result.googleId,
-        googleId: result.googleId,
-        title: result.title,
-        authors: result.authors,
-        isbn: result.isbn13,
-        coverUrl: result.coverUrl,
-        description: result.description,
-        source: "google",
-      }))
+      googleResults.map(function (result) {
+        return {
+          id: result.googleId,
+          googleId: result.googleId,
+          title: result.title,
+          authors: result.authors,
+          isbn: result.isbn13,
+          coverUrl: result.coverUrl,
+          description: result.description,
+          source: "google",
+        };
+      })
     );
     setSearchSource("google");
-  };
+  }
 
-  const addToShelf = (bookId, count) => {
+  function addToShelf(bookId, count) {
     const copies = Number(count) || 1;
     if (copies <= 0) {
       setFeedback("Copies must be at least 1.");
@@ -190,54 +205,62 @@ const Library = ({ initialRole = "teacher" }) => {
     }
     const existing = getShelfEntry(bookId);
     if (existing) {
-      updateShelf(bookId, (entry) => ({
-        ...entry,
-        total: entry.total + copies,
-        available: entry.available + copies,
-      }));
+      updateShelf(bookId, function (entry) {
+        return {
+          ...entry,
+          total: entry.total + copies,
+          available: entry.available + copies,
+        };
+      });
     } else {
-      setShelf((prev) => [...prev, { bookId, total: copies, available: copies }]);
+      setShelf(function (prev) {
+        return [...prev, { bookId, total: copies, available: copies }];
+      });
     }
     setFeedback("Added to your class shelf.");
-  };
+  }
 
-  const handleAddFromSearch = (book) => {
-    const match = findCatalogMatch(book);
-    let catalogId = match?.id;
-
-    if (!catalogId) {
-      catalogId = createId("cat");
-      setCatalog((prev) => [
-        ...prev,
-        {
-          id: catalogId,
-          googleId: book.googleId,
-          title: book.title,
-          authors: book.authors,
-          isbn: book.isbn,
-          coverUrl: book.coverUrl,
-          description: book.description,
-          tags: { genre: "", readingLevel: "", interest: "" },
-          source: book.source,
-        },
-      ]);
-    }
-
-    addToShelf(catalogId, copiesDraft[book.id] || 1);
-  };
-
-  const handleManualAdd = (event) => {
+  function handleManualAdd(event) {
     event.preventDefault();
     if (!manualForm.title.trim()) {
       setFeedback("Title is required for manual entries.");
       return;
     }
 
+  function handleAddFromSearch(book) {
+    const match = findCatalogMatch(book);
+    let catalogId = match?.id;
+
+    if (!catalogId) {
+      catalogId = createId("cat");
+      setCatalog(function (prev) {
+        return [
+          ...prev,
+          {
+            id: catalogId,
+            googleId: book.googleId,
+            title: book.title,
+            authors: book.authors,
+            isbn: book.isbn,
+            coverUrl: book.coverUrl,
+            description: book.description,
+            tags: { genre: "", readingLevel: "", interest: "" },
+            source: book.source,
+          },
+        ];
+      });
+    }
+
+    addToShelf(catalogId, copiesDraft[book.id] || 1);
+  }
+
     const newBook = {
       id: createId("cat"),
       title: manualForm.title.trim(),
       authors: manualForm.authors
-        ? manualForm.authors.split(",").map((value) => value.trim())
+        ? manualForm.authors.split(",").map(function (value) {
+            return value.trim();
+          })
         : ["Unknown"],
       isbn: manualForm.isbn.trim() || null,
       coverUrl: manualForm.coverUrl.trim() || null,
@@ -250,7 +273,9 @@ const Library = ({ initialRole = "teacher" }) => {
       source: "manual",
     };
 
-    setCatalog((prev) => [...prev, newBook]);
+    setCatalog(function (prev) {
+      return [...prev, newBook];
+    });
     addToShelf(newBook.id, 1);
     setManualForm({
       title: "",
@@ -262,35 +287,45 @@ const Library = ({ initialRole = "teacher" }) => {
       readingLevel: "",
       interest: "",
     });
-  };
+  }
 
-  const handleRequest = (bookId) => {
+  function handleRequest(bookId) {
     setFeedback("");
     if (studentCheckouts.length >= MAX_BAG) {
       setFeedback("Student already has 5 books. Return one before requesting more.");
       return;
     }
 
-    const alreadyRequested = requests.some(
-      (request) =>
+    const alreadyRequested = requests.some(function (request) {
+      return (
         request.bookId === bookId &&
         request.studentId === activeStudentId &&
         request.status === "pending"
-    );
+      );
+    });
     if (alreadyRequested) {
       setFeedback("Request already pending for this student.");
       return;
     }
 
-    setRequests((prev) => [
-      ...prev,
-      { id: createId("req"), bookId, studentId: activeStudentId, status: "pending" },
-    ]);
-  };
+    setRequests(function (prev) {
+      return [
+        ...prev,
+        {
+          id: createId("req"),
+          bookId,
+          studentId: activeStudentId,
+          status: "pending",
+        },
+      ];
+    });
+  }
 
-  const handleApproveRequest = (requestId) => {
+  function handleApproveRequest(requestId) {
     setFeedback("");
-    const request = requests.find((item) => item.id === requestId);
+    const request = requests.find(function (item) {
+      return item.id === requestId;
+    });
     if (!request) return;
 
     const entry = getShelfEntry(request.bookId);
@@ -299,79 +334,88 @@ const Library = ({ initialRole = "teacher" }) => {
       return;
     }
 
-    const studentBagCount = checkouts.filter(
-      (checkout) =>
+    const studentBagCount = checkouts.filter(function (checkout) {
+      return (
         checkout.studentId === request.studentId &&
         checkout.status === "checked_out"
-    ).length;
+      );
+    }).length;
     if (studentBagCount >= MAX_BAG) {
       setFeedback("Student has reached the 5 book limit.");
       return;
     }
 
-    updateShelf(request.bookId, (item) => ({
-      ...item,
-      available: item.available - 1,
-    }));
+    updateShelf(request.bookId, function (item) {
+      return {
+        ...item,
+        available: item.available - 1,
+      };
+    });
 
-    setCheckouts((prev) => [
-      ...prev,
-      {
-        id: createId("co"),
-        bookId: request.bookId,
-        studentId: request.studentId,
-        status: "checked_out",
-        returnRequested: false,
-        returnNotes: "",
-      },
-    ]);
+    setCheckouts(function (prev) {
+      return [
+        ...prev,
+        {
+          id: createId("co"),
+          bookId: request.bookId,
+          studentId: request.studentId,
+          status: "checked_out",
+          returnRequested: false,
+          returnNotes: "",
+        },
+      ];
+    });
 
-    setRequests((prev) =>
-      prev.map((item) =>
-        item.id === requestId ? { ...item, status: "approved" } : item
-      )
-    );
-  };
+    setRequests(function (prev) {
+      return prev.map(function (item) {
+        return item.id === requestId ? { ...item, status: "approved" } : item;
+      });
+    });
+  }
 
-  const handleDenyRequest = (requestId) => {
-    setRequests((prev) =>
-      prev.map((item) =>
-        item.id === requestId ? { ...item, status: "denied" } : item
-      )
-    );
-  };
+  function handleDenyRequest(requestId) {
+    setRequests(function (prev) {
+      return prev.map(function (item) {
+        return item.id === requestId ? { ...item, status: "denied" } : item;
+      });
+    });
+  }
 
-  const handleReturn = (checkoutId) => {
-    const checkout = checkouts.find((item) => item.id === checkoutId);
+  function handleReturn(checkoutId) {
+    const checkout = checkouts.find(function (item) {
+      return item.id === checkoutId;
+    });
     if (!checkout) return;
 
-    updateShelf(checkout.bookId, (item) => ({
-      ...item,
-      available: item.available + 1,
-    }));
+    updateShelf(checkout.bookId, function (item) {
+      return {
+        ...item,
+        available: item.available + 1,
+      };
+    });
 
-    setCheckouts((prev) =>
-      prev.map((item) =>
-        item.id === checkoutId
+    setCheckouts(function (prev) {
+      return prev.map(function (item) {
+        return item.id === checkoutId
           ? {
               ...item,
               status: "returned",
               returnNotes: returnNotes[checkoutId] || item.returnNotes,
             }
-          : item
-      )
-    );
-  };
+          : item;
+      });
+    });
+  }
 
-  const handleReturnRequest = (checkoutId) => {
-    setCheckouts((prev) =>
-      prev.map((item) =>
-        item.id === checkoutId ? { ...item, returnRequested: true } : item
-      )
-    );
-  };
+  function handleReturnRequest(checkoutId) {
+    setCheckouts(function (prev) {
+      return prev.map(function (item) {
+        return item.id === checkoutId ? { ...item, returnRequested: true } : item;
+      });
+    });
+  }
 
-  const adjustCopies = (bookId, delta) => {
+  function adjustCopies(bookId, delta) {
     const entry = getShelfEntry(bookId);
     if (!entry) return;
     const checkedOut = entry.total - entry.available;
@@ -379,12 +423,14 @@ const Library = ({ initialRole = "teacher" }) => {
       setFeedback("Cannot reduce copies below the number checked out.");
       return;
     }
-    updateShelf(bookId, (item) => ({
-      ...item,
-      total: item.total + delta,
-      available: item.available + (delta > 0 ? delta : Math.min(delta, 0)),
-    }));
-  };
+    updateShelf(bookId, function (item) {
+      return {
+        ...item,
+        total: item.total + delta,
+        available: item.available + (delta > 0 ? delta : Math.min(delta, 0)),
+      };
+    });
+  }
 
   return (
     <div className="library">
@@ -399,7 +445,12 @@ const Library = ({ initialRole = "teacher" }) => {
         <div className="library__controls">
           <label className="control">
             Role
-            <select value={role} onChange={(event) => setRole(event.target.value)}>
+            <select
+              value={role}
+              onChange={function (event) {
+                setRole(event.target.value);
+              }}
+            >
               <option value="teacher">Teacher</option>
               <option value="student">Student</option>
             </select>
@@ -409,13 +460,17 @@ const Library = ({ initialRole = "teacher" }) => {
               Student
               <select
                 value={activeStudentId}
-                onChange={(event) => setActiveStudentId(event.target.value)}
+                onChange={function (event) {
+                  setActiveStudentId(event.target.value);
+                }}
               >
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.name}
-                  </option>
-                ))}
+                {students.map(function (student) {
+                  return (
+                    <option key={student.id} value={student.id}>
+                      {student.name}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           )}
@@ -432,7 +487,9 @@ const Library = ({ initialRole = "teacher" }) => {
               type="search"
               placeholder="Search by title, author, ISBN..."
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={function (event) {
+                setSearchQuery(event.target.value);
+              }}
             />
             <button type="submit">Search</button>
           </form>
@@ -441,46 +498,55 @@ const Library = ({ initialRole = "teacher" }) => {
           </p>
 
           <div className="grid">
-            {searchResults.map((result) => (
-              <article key={result.id} className="card">
-                <div className="card__cover">
-                  {result.coverUrl ? (
-                    <img src={result.coverUrl} alt={result.title} />
-                  ) : (
-                    <div className="cover__placeholder">No cover</div>
-                  )}
-                </div>
-                <div className="card__body">
-                  <h3>{result.title}</h3>
-                  <p>{result.authors.join(", ")}</p>
-                  <p className="subtle">
-                    {result.isbn ? `ISBN ${result.isbn}` : "No ISBN listed"}
-                  </p>
-                  <p className="subtle">{result.description}</p>
-                  <div className="card__meta">
-                    <span className="tag">
-                      {result.source === "catalog" ? "Catalog" : "Google"}
-                    </span>
+            {searchResults.map(function (result) {
+              return (
+                <article key={result.id} className="card">
+                  <div className="card__cover">
+                    {result.coverUrl ? (
+                      <img src={result.coverUrl} alt={result.title} />
+                    ) : (
+                      <div className="cover__placeholder">No cover</div>
+                    )}
                   </div>
-                  <div className="card__actions">
-                    <input
-                      type="number"
-                      min="1"
-                      value={copiesDraft[result.id] || 1}
-                      onChange={(event) =>
-                        setCopiesDraft((prev) => ({
-                          ...prev,
-                          [result.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <button type="button" onClick={() => handleAddFromSearch(result)}>
-                      Add to shelf
-                    </button>
+                  <div className="card__body">
+                    <h3>{result.title}</h3>
+                    <p>{result.authors.join(", ")}</p>
+                    <p className="subtle">
+                      {result.isbn ? `ISBN ${result.isbn}` : "No ISBN listed"}
+                    </p>
+                    <p className="subtle">{result.description}</p>
+                    <div className="card__meta">
+                      <span className="tag">
+                        {result.source === "catalog" ? "Catalog" : "Google"}
+                      </span>
+                    </div>
+                    <div className="card__actions">
+                      <input
+                        type="number"
+                        min="1"
+                        value={copiesDraft[result.id] || 1}
+                        onChange={function (event) {
+                          setCopiesDraft(function (prev) {
+                            return {
+                              ...prev,
+                              [result.id]: event.target.value,
+                            };
+                          });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={function () {
+                          handleAddFromSearch(result);
+                        }}
+                      >
+                        Add to shelf
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
             {!searchResults.length && (
               <div className="empty">
                 {searchSource === "catalog"
@@ -497,70 +563,86 @@ const Library = ({ initialRole = "teacher" }) => {
                 type="text"
                 placeholder="Title *"
                 value={manualForm.title}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, title: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, title: event.target.value };
+                  });
+                }}
               />
               <input
                 type="text"
                 placeholder="Authors (comma separated)"
                 value={manualForm.authors}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, authors: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, authors: event.target.value };
+                  });
+                }}
               />
               <input
                 type="text"
                 placeholder="ISBN"
                 value={manualForm.isbn}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, isbn: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, isbn: event.target.value };
+                  });
+                }}
               />
               <input
                 type="url"
                 placeholder="Cover URL"
                 value={manualForm.coverUrl}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, coverUrl: event.target.value };
+                  });
+                }}
               />
               <input
                 type="text"
                 placeholder="Genre"
                 value={manualForm.genre}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, genre: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, genre: event.target.value };
+                  });
+                }}
               />
               <input
                 type="text"
                 placeholder="Reading level"
                 value={manualForm.readingLevel}
-                onChange={(event) =>
-                  setManualForm((prev) => ({
-                    ...prev,
-                    readingLevel: event.target.value,
-                  }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return {
+                      ...prev,
+                      readingLevel: event.target.value,
+                    };
+                  });
+                }}
               />
               <input
                 type="text"
                 placeholder="Interest"
                 value={manualForm.interest}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, interest: event.target.value }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return { ...prev, interest: event.target.value };
+                  });
+                }}
               />
               <textarea
                 placeholder="Description"
                 value={manualForm.description}
-                onChange={(event) =>
-                  setManualForm((prev) => ({
-                    ...prev,
-                    description: event.target.value,
-                  }))
-                }
+                onChange={function (event) {
+                  setManualForm(function (prev) {
+                    return {
+                      ...prev,
+                      description: event.target.value,
+                    };
+                  });
+                }}
               />
             </div>
             <button type="submit">Save to catalog + add 1 copy</button>
@@ -571,41 +653,58 @@ const Library = ({ initialRole = "teacher" }) => {
       <section className="panel">
         <h2>Class Shelf</h2>
         <div className="grid">
-          {shelfItems.map((entry) => (
-            <article key={entry.bookId} className="card">
-              <div className="card__cover">
-                {entry.book?.coverUrl ? (
-                  <img src={entry.book.coverUrl} alt={entry.book.title} />
-                ) : (
-                  <div className="cover__placeholder">No cover</div>
-                )}
-              </div>
-              <div className="card__body">
-                <h3>{entry.book?.title || "Unknown book"}</h3>
-                <p>{entry.book?.authors?.join(", ")}</p>
-                <p className="subtle">
-                  Total: {entry.total} | Available: {entry.available} | Checked out:{" "}
-                  {entry.checkedOut}
-                </p>
-                {role === "teacher" ? (
-                  <div className="card__actions">
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, 1)}>
-                      +1 copy
-                    </button>
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, -1)}>
-                      -1 copy
-                    </button>
-                  </div>
-                ) : (
-                  <div className="card__actions">
-                    <button type="button" onClick={() => handleRequest(entry.bookId)}>
-                      {entry.available > 0 ? "Request checkout" : "Join waitlist"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </article>
-          ))}
+          {shelfItems.map(function (entry) {
+            return (
+              <article key={entry.bookId} className="card">
+                <div className="card__cover">
+                  {entry.book?.coverUrl ? (
+                    <img src={entry.book.coverUrl} alt={entry.book.title} />
+                  ) : (
+                    <div className="cover__placeholder">No cover</div>
+                  )}
+                </div>
+                <div className="card__body">
+                  <h3>{entry.book?.title || "Unknown book"}</h3>
+                  <p>{entry.book?.authors?.join(", ")}</p>
+                  <p className="subtle">
+                    Total: {entry.total} | Available: {entry.available} | Checked out:{" "}
+                    {entry.checkedOut}
+                  </p>
+                  {role === "teacher" ? (
+                    <div className="card__actions">
+                      <button
+                        type="button"
+                        onClick={function () {
+                          adjustCopies(entry.bookId, 1);
+                        }}
+                      >
+                        +1 copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={function () {
+                          adjustCopies(entry.bookId, -1);
+                        }}
+                      >
+                        -1 copy
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="card__actions">
+                      <button
+                        type="button"
+                        onClick={function () {
+                          handleRequest(entry.bookId);
+                        }}
+                      >
+                        {entry.available > 0 ? "Request checkout" : "Join waitlist"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
@@ -613,8 +712,10 @@ const Library = ({ initialRole = "teacher" }) => {
         <section className="panel">
           <h2>My Book Bag ({studentCheckouts.length}/{MAX_BAG})</h2>
           <div className="grid">
-            {studentCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
+            {studentCheckouts.map(function (checkout) {
+              const book = catalog.find(function (item) {
+                return item.id === checkout.bookId;
+              });
               return (
                 <article key={checkout.id} className="card">
                   <div className="card__body">
@@ -626,7 +727,9 @@ const Library = ({ initialRole = "teacher" }) => {
                     <div className="card__actions">
                       <button
                         type="button"
-                        onClick={() => handleReturnRequest(checkout.id)}
+                        onClick={function () {
+                          handleReturnRequest(checkout.id);
+                        }}
                         disabled={checkout.returnRequested}
                       >
                         Request return
@@ -641,8 +744,10 @@ const Library = ({ initialRole = "teacher" }) => {
 
           <h3>My Requests</h3>
           <div className="stack">
-            {studentRequests.map((request) => {
-              const book = catalog.find((item) => item.id === request.bookId);
+            {studentRequests.map(function (request) {
+              const book = catalog.find(function (item) {
+                return item.id === request.bookId;
+              });
               return (
                 <div key={request.id} className="row">
                   <span>{book?.title}</span>
@@ -661,9 +766,13 @@ const Library = ({ initialRole = "teacher" }) => {
         <section className="panel">
           <h2>Requests</h2>
           <div className="stack">
-            {requests.map((request) => {
-              const book = catalog.find((item) => item.id === request.bookId);
-              const student = students.find((item) => item.id === request.studentId);
+            {requests.map(function (request) {
+              const book = catalog.find(function (item) {
+                return item.id === request.bookId;
+              });
+              const student = students.find(function (item) {
+                return item.id === request.studentId;
+              });
               return (
                 <div key={request.id} className="row">
                   <span>
@@ -674,10 +783,20 @@ const Library = ({ initialRole = "teacher" }) => {
                   </span>
                   {request.status === "pending" && (
                     <div className="row__actions">
-                      <button type="button" onClick={() => handleApproveRequest(request.id)}>
+                      <button
+                        type="button"
+                        onClick={function () {
+                          handleApproveRequest(request.id);
+                        }}
+                      >
                         Approve
                       </button>
-                      <button type="button" onClick={() => handleDenyRequest(request.id)}>
+                      <button
+                        type="button"
+                        onClick={function () {
+                          handleDenyRequest(request.id);
+                        }}
+                      >
                         Deny
                       </button>
                     </div>
@@ -694,9 +813,13 @@ const Library = ({ initialRole = "teacher" }) => {
         <section className="panel">
           <h2>Active Checkouts</h2>
           <div className="stack">
-            {activeCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
-              const student = students.find((item) => item.id === checkout.studentId);
+            {activeCheckouts.map(function (checkout) {
+              const book = catalog.find(function (item) {
+                return item.id === checkout.bookId;
+              });
+              const student = students.find(function (item) {
+                return item.id === checkout.studentId;
+              });
               return (
                 <div key={checkout.id} className="row row--stack">
                   <div>
@@ -710,14 +833,21 @@ const Library = ({ initialRole = "teacher" }) => {
                       type="text"
                       placeholder="Condition note"
                       value={returnNotes[checkout.id] || ""}
-                      onChange={(event) =>
-                        setReturnNotes((prev) => ({
-                          ...prev,
-                          [checkout.id]: event.target.value,
-                        }))
-                      }
+                      onChange={function (event) {
+                        setReturnNotes(function (prev) {
+                          return {
+                            ...prev,
+                            [checkout.id]: event.target.value,
+                          };
+                        });
+                      }}
                     />
-                    <button type="button" onClick={() => handleReturn(checkout.id)}>
+                    <button
+                      type="button"
+                      onClick={function () {
+                        handleReturn(checkout.id);
+                      }}
+                    >
                       Mark returned
                     </button>
                   </div>
@@ -732,4 +862,4 @@ const Library = ({ initialRole = "teacher" }) => {
   );
 };
 
-export default Library;
+Library;

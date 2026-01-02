@@ -41,19 +41,21 @@ const mockGoogleBooks = [
   },
 ];
 
-const matchesQuery = (value, query) =>
+function matchesQuery (value, query){
   value && value.toLowerCase().includes(query);
-
-export const searchGoogleBooks = async (rawQuery) => {
+}
+export async function searchGoogleBooks (rawQuery) {
   const query = rawQuery.trim().toLowerCase();
   if (!query) {
     return [];
   }
 
-  return mockGoogleBooks.filter((book) => {
+  return mockGoogleBooks.filter(function (book) {
     return (
       matchesQuery(book.title, query) ||
-      book.authors.some((author) => matchesQuery(author, query)) ||
+      book.authors.some(function (author) {
+        return matchesQuery(author, query);
+      }) ||
       matchesQuery(book.isbn13, query)
     );
   });

@@ -1,7 +1,7 @@
 import Library from "../library.jsx";
 
-const Teacher = () => {
+function Teacher() {
   return <Library initialRole="teacher" />;
-};
+}
 
 export default Teacher;

@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const Login = ({ onLogin }) => {
+export default function Login ({ onLogin }) {
   const [role, setRole] = useState("teacher");
   const [email, setEmail] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (event) => {
+  function handleSubmit(event) {
     event.preventDefault();
     onLogin(role);
     navigate(role === "teacher" ? "/teacher" : "/student");
-  };
+  }
 
   return (
     <div className="panel">
@@ -19,7 +19,12 @@ const Login = ({ onLogin }) => {
       <form className="stack" onSubmit={handleSubmit}>
         <label className="control">
           Role
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
+          <select
+            value={role}
+            onChange={function (event) {
+              setRole(event.target.value);
+            }}
+          >
             <option value="teacher">Teacher</option>
             <option value="student">Student</option>
           </select>
@@ -29,7 +34,9 @@ const Login = ({ onLogin }) => {
           <input
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={function (event) {
+              setEmail(event.target.value);
+            }}
             placeholder="you@classshelf.com"
           />
         </label>
@@ -39,4 +46,4 @@ const Login = ({ onLogin }) => {
   );
 };
 
-export default Login;
+Login;
