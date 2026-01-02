@@ -8,45 +8,83 @@ datasource db {
 }
 
 model Teacher {
-  id         Int       @id @default(autoincrement())
-  name       String
-  email      String    @unique
-  password   String
-  createdAt  DateTime  @default(now())
-  books      Book[]
-  students   Student[]
-}
-
-model Book {
-  id          Int       @id @default(autoincrement())
-  teacher     Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  teacherId   Int
-  title       String
-  author      String?
-  isbn        String?
-  coverUrl    String?
-  description String?
-  createdAt   DateTime  @default(now())
-  checkouts   Checkout[]
+  id           Int          @id @default(autoincrement())
+  name         String
+  email        String?      @unique
+  password     String?
+  shelfCode    String       @unique
+  createdAt    DateTime     @default(now())
+  books        Book[]
+  students     Student[]
+  shelfEntries ShelfEntry[]
 }
 
 model Student {
-  id         Int       @id @default(autoincrement())
-  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  teacherId  Int
-  name       String
-  email      String?
-  createdAt  DateTime  @default(now())
-  checkouts  Checkout[]
+  id        Int        @id @default(autoincrement())
+  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId Int
+  name      String
+  email     String?    @unique
+  password  String?
+  createdAt DateTime   @default(now())
+  checkouts Checkout[]
+  requests  Request[]
+}
+
+
+model Book {
+  id           Int          @id @default(autoincrement())
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId    Int
+  title        String
+  authors      String[]
+  googleId     String?
+  isbn         String?
+  coverUrl     String?
+  description  String?
+  genre        String?
+  readingLevel String?
+  interest     String?
+  source       String?
+  createdAt    DateTime     @default(now())
+  checkouts    Checkout[]
+  requests     Request[]
+  shelf        ShelfEntry[]
+}
+
+model ShelfEntry {
+  id        Int      @id @default(autoincrement())
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId Int
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookId    Int
+  total     Int
+  available Int
+  createdAt DateTime @default(now())
+
+  @@unique([teacherId, bookId])
+}
+
+model Request {
+  id        Int      @id @default(autoincrement())
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookId    Int
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId Int
+  status    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Checkout {
-  id          Int       @id @default(autoincrement())
-  book        Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  bookId      Int
-  student     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId   Int
-  checkoutDate DateTime
-  returnDate   DateTime?
-  isReturned   Boolean  @default(false)
+  id              Int       @id @default(autoincrement())
+  book            Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookId          Int
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       Int
+  status          String
+  checkoutDate    DateTime  @default(now())
+  returnDate      DateTime?
+  returnRequested Boolean   @default(false)
+  returnNotes     String?
 }
