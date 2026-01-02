@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { registerUser } from "../../../api.js";
+import { registerUser } from "../../../utils/api.js";
 
 export default function Register({ onRegister }) {
   const [role, setRole] = useState("teacher");

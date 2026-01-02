@@ -1,5 +1,4 @@
-import React from "react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveRequest,
   createBook,
@@ -10,7 +9,8 @@ import {
   returnCheckout,
   searchGoogleBooks,
   updateShelf,
-} from "../../../api.js";
+  refreshShelfCode,
+} from "../../../utils/api.js";
 
 const MAX_BAG = 5;
 
@@ -23,6 +23,10 @@ export default function Library({ user }) {
   const [activeStudentId, setActiveStudentId] = useState(null);
   const [requests, setRequests] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
+
+  const [shelfCode, setShelfCode] = useState((user?.shelfCode || "").toUpperCase());
+  const [isRefreshingCode, setIsRefreshingCode] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -44,13 +48,20 @@ export default function Library({ user }) {
   const [feedback, setFeedback] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const teacherId = user
-    ? isTeacher
-      ? user.id
-      : user.teacherId
-    : null;
+  const teacherId = user ? (isTeacher ? user.id : user.teacherId) : null;
 
-  const reloadLibrary = async () => {
+  useEffect(() => {
+    setShelfCode((user?.shelfCode || "").toUpperCase());
+  }, [user?.shelfCode]);
+
+  const shelfCodePretty = useMemo(() => {
+    const code = (shelfCode || "").trim().toUpperCase();
+    if (!code) return "";
+    if (code.length === 6) return `${code.slice(0, 3)} ${code.slice(3)}`;
+    return code;
+  }, [shelfCode]);
+
+  const reloadLibrary = useCallback(async () => {
     if (!teacherId) return;
 
     setIsLoading(true);
@@ -59,28 +70,31 @@ export default function Library({ user }) {
     try {
       const data = await getLibraryData(teacherId);
 
-      setCatalog(data.catalog);
-      setShelf(data.shelf);
-      setStudents(data.students);
-      setRequests(data.requests);
-      setCheckouts(data.checkouts);
+      setCatalog(data.catalog || []);
+      setShelf(data.shelf || []);
+      setStudents(data.students || []);
+      setRequests(data.requests || []);
+      setCheckouts(data.checkouts || []);
 
       if (!isTeacher) {
-        setActiveStudentId(user.id);
-      } else if (!activeStudentId && data.students.length) {
-        setActiveStudentId(data.students[0].id);
+        setActiveStudentId(user?.id ?? null);
+      } else {
+        setActiveStudentId((prev) => {
+          if (prev) return prev;
+          if (data.students && data.students.length) return data.students[0].id;
+          return null;
+        });
       }
     } catch (error) {
       setFeedback(error.message || "Unable to load library data.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [teacherId, isTeacher, user?.id]);
 
   useEffect(() => {
     reloadLibrary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teacherId]);
+  }, [reloadLibrary]);
 
   const shelfItems = useMemo(() => {
     return shelf.map((entry) => {
@@ -106,9 +120,7 @@ export default function Library({ user }) {
     return students.find((s) => s.id === activeStudentId) || null;
   }, [students, activeStudentId]);
 
-  const getShelfEntry = (bookId) => {
-    return shelf.find((entry) => entry.bookId === bookId);
-  };
+  const getShelfEntry = (bookId) => shelf.find((entry) => entry.bookId === bookId);
 
   const findCatalogMatch = (candidate) => {
     if (!candidate) return null;
@@ -118,10 +130,44 @@ export default function Library({ user }) {
       if (candidate.googleId && book.googleId === candidate.googleId) return true;
 
       return (
-        book.title.toLowerCase() === candidate.title.toLowerCase() &&
-        book.authors.join(",").toLowerCase() === candidate.authors.join(",").toLowerCase()
+        (book.title || "").toLowerCase() === (candidate.title || "").toLowerCase() &&
+        (book.authors || []).join(",").toLowerCase() === (candidate.authors || []).join(",").toLowerCase()
       );
     });
+  };
+
+  const handleCopyCode = async () => {
+    const code = (shelfCode || "").trim().toUpperCase();
+    if (!code) return;
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        setFeedback("Copy is not available in this browser.");
+        return;
+      }
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch (err) {
+      setFeedback(err?.message || "Could not copy the code.");
+    }
+  };
+
+  const handleRefreshCode = async () => {
+    if (!teacherId) return;
+
+    setFeedback("");
+    setIsRefreshingCode(true);
+
+    try {
+      const data = await refreshShelfCode(teacherId);
+      setShelfCode((data?.shelfCode || "").toUpperCase());
+      setFeedback("New class code generated.");
+    } catch (err) {
+      setFeedback(err?.message || "Could not generate a new code.");
+    } finally {
+      setIsRefreshingCode(false);
+    }
   };
 
   const handleSearch = async (event) => {
@@ -135,7 +181,7 @@ export default function Library({ user }) {
     }
 
     const localResults = catalog.filter((book) => {
-      const target = `${book.title} ${book.authors.join(" ")} ${book.isbn || ""}`;
+      const target = `${book.title} ${(book.authors || []).join(" ")} ${book.isbn || ""}`;
       return target.toLowerCase().includes(query.toLowerCase());
     });
 
@@ -361,14 +407,22 @@ export default function Library({ user }) {
     <div className="library">
       <header className="library__header">
         <div>
-          <p className="eyebrow">ClassShelf MVP</p>
           <h1>{isTeacher ? "Teacher Library" : "Student Library"}</h1>
-          <p className="subtle">Public catalog + class shelf + requests in one place.</p>
 
           {isTeacher && (
-            <p className="subtle">
-              Shelf code: <strong>{user?.shelfCode || "Not set yet"}</strong>
-            </p>
+            <div className="subtle">
+              <div>
+                Class code: <strong>{shelfCodePretty || "Not set yet"}</strong>
+              </div>
+              <div className="row__actions">
+                <button type="button" onClick={handleCopyCode} disabled={!shelfCode}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                <button type="button" onClick={handleRefreshCode} disabled={isRefreshingCode}>
+                  {isRefreshingCode ? "Generating..." : "Generate new code"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
@@ -379,7 +433,9 @@ export default function Library({ user }) {
               <select
                 value={activeStudentId || ""}
                 onChange={(event) => setActiveStudentId(Number(event.target.value))}
+                disabled={!students.length}
               >
+                {!students.length && <option value="">No students yet</option>}
                 {students.map((student) => (
                   <option key={student.id} value={student.id}>
                     {student.name}
@@ -423,7 +479,7 @@ export default function Library({ user }) {
 
                 <div className="card__body">
                   <h3>{result.title}</h3>
-                  <p>{result.authors.join(", ")}</p>
+                  <p>{(result.authors || []).join(", ")}</p>
                   <p className="subtle">{result.isbn ? `ISBN ${result.isbn}` : "No ISBN listed"}</p>
                   <p className="subtle">{result.description}</p>
 
@@ -470,9 +526,7 @@ export default function Library({ user }) {
                 type="text"
                 placeholder="Authors (comma separated)"
                 value={manualForm.authors}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, authors: event.target.value }))
-                }
+                onChange={(event) => setManualForm((prev) => ({ ...prev, authors: event.target.value }))}
               />
               <input
                 type="text"
@@ -484,9 +538,7 @@ export default function Library({ user }) {
                 type="url"
                 placeholder="Cover URL"
                 value={manualForm.coverUrl}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))
-                }
+                onChange={(event) => setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))}
               />
               <input
                 type="text"
@@ -537,7 +589,7 @@ export default function Library({ user }) {
               </div>
               <div className="card__body">
                 <h3>{entry.book?.title || "Unknown book"}</h3>
-                <p>{entry.book?.authors?.join(", ")}</p>
+                <p>{(entry.book?.authors || []).join(", ")}</p>
                 <p className="subtle">
                   Total: {entry.total} | Available: {entry.available} | Checked out: {entry.checkedOut}
                 </p>
@@ -566,7 +618,9 @@ export default function Library({ user }) {
 
       {!isTeacher && (
         <section className="panel">
-          <h2>My Book Bag ({studentCheckouts.length}/{MAX_BAG})</h2>
+          <h2>
+            My Book Bag ({studentCheckouts.length}/{MAX_BAG})
+          </h2>
 
           <div className="grid">
             {studentCheckouts.map((checkout) => {
@@ -576,7 +630,7 @@ export default function Library({ user }) {
                 <article key={checkout.id} className="card">
                   <div className="card__body">
                     <h3>{book?.title}</h3>
-                    <p>{book?.authors?.join(", ")}</p>
+                    <p>{(book?.authors || []).join(", ")}</p>
                     <p className="subtle">
                       Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
                     </p>
@@ -594,20 +648,6 @@ export default function Library({ user }) {
               );
             })}
             {!studentCheckouts.length && <div className="empty">No books checked out.</div>}
-          </div>
-
-          <h3>My Requests</h3>
-          <div className="stack">
-            {studentRequests.map((request) => {
-              const book = catalog.find((item) => item.id === request.bookId);
-              return (
-                <div key={request.id} className="row">
-                  <span>{book?.title}</span>
-                  <span className={`status status--${request.status}`}>{request.status}</span>
-                </div>
-              );
-            })}
-            {!studentRequests.length && <div className="empty">No requests yet.</div>}
           </div>
         </section>
       )}
@@ -682,11 +722,11 @@ export default function Library({ user }) {
 
       {isTeacher && (
         <section className="panel">
-          <h2>Student Snapshot</h2>
+          <h2>Student</h2>
 
           {!students.length && (
             <div className="empty">
-              No students yet. Share your shelf code with students so they can join your class.
+              No students yet. Share your class code with students so they can join your class.
             </div>
           )}
 
@@ -700,7 +740,9 @@ export default function Library({ user }) {
                 Viewing: <strong>{activeStudent?.name || "Student"}</strong>
               </p>
 
-              <h3>Book Bag ({studentCheckouts.length}/{MAX_BAG})</h3>
+              <h3>
+                Book Bag ({studentCheckouts.length}/{MAX_BAG})
+              </h3>
               <div className="grid">
                 {studentCheckouts.map((checkout) => {
                   const book = catalog.find((item) => item.id === checkout.bookId);
@@ -708,7 +750,7 @@ export default function Library({ user }) {
                     <article key={checkout.id} className="card">
                       <div className="card__body">
                         <h3>{book?.title}</h3>
-                        <p>{book?.authors?.join(", ")}</p>
+                        <p>{(book?.authors || []).join(", ")}</p>
                         <p className="subtle">
                           Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
                         </p>
@@ -717,20 +759,6 @@ export default function Library({ user }) {
                   );
                 })}
                 {!studentCheckouts.length && <div className="empty">No books checked out.</div>}
-              </div>
-
-              <h3>Requests</h3>
-              <div className="stack">
-                {studentRequests.map((request) => {
-                  const book = catalog.find((item) => item.id === request.bookId);
-                  return (
-                    <div key={request.id} className="row">
-                      <span>{book?.title}</span>
-                      <span className={`status status--${request.status}`}>{request.status}</span>
-                    </div>
-                  );
-                })}
-                {!studentRequests.length && <div className="empty">No requests yet.</div>}
               </div>
             </>
           )}
