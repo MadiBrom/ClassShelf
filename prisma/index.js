@@ -186,58 +186,34 @@ app.post('/api/register', async (req, res) => {
 });
 
 app.post('/api/login', async (req, res) => {
-  const { role, email, password } = req.body || {};
-  if (!role || !email || !password) {
-    res.status(400).json({ error: 'Role, email, and password are required.' });
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    res.status(400).json({ error: 'Email and password are required.' });
     return;
   }
 
   try {
-    if (role === 'teacher') {
-      const teacher = await prisma.teacher.findUnique({
-        where: { email },
-      });
-      if (!teacher) {
-        res.status(404).json({ error: 'Teacher not found.' });
-        return;
-      }
+    const teacher = await prisma.teacher.findUnique({ where: { email } });
+    if (teacher) {
       const valid = await bcrypt.compare(password, teacher.password);
-      if (!valid) {
-        res.status(401).json({ error: 'Invalid credentials.' });
-        return;
-      }
-      res.json({ id: teacher.id, role: 'teacher', name: teacher.name, email: teacher.email });
-      return;
+      if (!valid) return res.status(401).json({ error: 'Invalid credentials.' });
+      return res.json({ id: teacher.id, role: 'teacher', name: teacher.name, email: teacher.email });
     }
 
-    if (role === 'student') {
-      const student = await prisma.student.findUnique({
-        where: { email },
-      });
-      if (!student) {
-        res.status(404).json({ error: 'Student not found.' });
-        return;
-      }
+    const student = await prisma.student.findUnique({ where: { email } });
+    if (student) {
       const valid = await bcrypt.compare(password, student.password);
-      if (!valid) {
-        res.status(401).json({ error: 'Invalid credentials.' });
-        return;
-      }
-      res.json({
-        id: student.id,
-        role: 'student',
-        name: student.name,
-        email: student.email || '',
-        teacherId: student.teacherId,
-      });
-      return;
+      if (!valid) return res.status(401).json({ error: 'Invalid credentials.' });
+      return res.json({ id: student.id, role: 'student', name: student.name, email: student.email || '', teacherId: student.teacherId });
     }
 
-    res.status(400).json({ error: 'Unknown role.' });
+    return res.status(404).json({ error: 'User not found.' });
   } catch (error) {
+    console.error('LOGIN ERROR:', error);
     res.status(500).json({ error: 'Unable to log in.' });
   }
 });
+
 
 app.post('/api/books', async (req, res) => {
   const {

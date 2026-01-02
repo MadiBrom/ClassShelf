@@ -10,13 +10,27 @@ datasource db {
 model Teacher {
   id           Int          @id @default(autoincrement())
   name         String
-  email        String?       @unique
+  email        String?      @unique
   password     String?
+  shelfCode    String       @unique
   createdAt    DateTime     @default(now())
   books        Book[]
   students     Student[]
   shelfEntries ShelfEntry[]
 }
+
+model Student {
+  id        Int        @id @default(autoincrement())
+  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId Int
+  name      String
+  email     String?    @unique
+  password  String?
+  createdAt DateTime   @default(now())
+  checkouts Checkout[]
+  requests  Request[]
+}
+
 
 model Book {
   id           Int          @id @default(autoincrement())
@@ -36,18 +50,6 @@ model Book {
   checkouts    Checkout[]
   requests     Request[]
   shelf        ShelfEntry[]
-}
-
-model Student {
-  id        Int        @id @default(autoincrement())
-  teacher   Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  teacherId Int
-  name      String
-  email     String?    @unique
-  password  String?
-  createdAt DateTime   @default(now())
-  checkouts Checkout[]
-  requests  Request[]
 }
 
 model ShelfEntry {
