@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import Register from './components/register.jsx'
+import Login from './components/login.jsx'
+import Navbar from './components/navbar.jsx'
+import Library from './components/library.jsx'
 
 
 function App() {
@@ -6,7 +10,10 @@ function App() {
 
   return (
     <>
-      Hello World
+    <Navbar/>      
+      <Library path = "/library"/>
+      <Register path = "/register"/>
+      <Login path = "/login"/>
     </>
 
   )
