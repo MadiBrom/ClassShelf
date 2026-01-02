@@ -1,13 +1,24 @@
-import React from 'react'
+import React from "react";
+import { Link } from "react-router-dom";
 
-const Navbar = () => {
+const Navbar = ({ role, onLogout }) => {
   return (
-    <div>
-        <button rel="login" href="/login">Login</button>
-        <button rel="register" href="/register">Register</button>
-        <button rel="library" href="/library">Library</button>
-</div>
-  )
+    <nav className="nav">
+      <div className="nav__brand">ClassShelf</div>
+      <div className="nav__links">
+        {/* <Link to="/library">Library</Link> */}
+        {role === "teacher" && <Link to="/teacher">Teacher</Link>}
+        {role === "student" && <Link to="/student">Student</Link>}
+        <Link to="/login">Login</Link>
+        <Link to="/register">Register</Link>
+        {role && (
+          <button type="button" onClick={onLogout}>
+            Log out ({role})
+          </button>
+        )}
+      </div>
+    </nav>
+  );
 }
 
-export default Navbar
+export default Navbar;

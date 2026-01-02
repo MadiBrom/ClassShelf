@@ -4,14 +4,15 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-      "start": "node prisma/index.js",
-  "dev": "nodemon index.js"
+    "start": "node prisma/index.js",
+    "dev": "nodemon index.js"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "react-router-dom": "^7.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
