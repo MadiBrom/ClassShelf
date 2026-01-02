@@ -1,12 +1,34 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser } from "../../../api.js";
+import { loginUser } from "../../../utils/api.js";
+
+const DRAFT_STORAGE_KEY = "classShelfLoginDraft";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const draft = JSON.parse(stored);
+      if (draft?.email) setEmail(draft.email);
+      if (draft?.password) setPassword(draft.password);
+    } catch (err) {
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      DRAFT_STORAGE_KEY,
+      JSON.stringify({ email, password })
+    );
+  }, [email, password]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -15,6 +37,7 @@ export default function Login({ onLogin }) {
     try {
       const user = await loginUser({ email, password });
       onLogin(user);
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
 
       if (user.role === "teacher") navigate("/teacher");
       else navigate("/student");

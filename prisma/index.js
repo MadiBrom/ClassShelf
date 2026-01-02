@@ -1,22 +1,15 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const app = express();
 const cors = require('cors')
+const { makeShelfCode, generateUniqueShelfCode } = require("../utils/shelfCode.cjs");
 const PORT = process.env.PORT || 3000;
 const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-prod";
 
 app.use(express.json());
-app.use(function (req, res, next) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(204);
-    return;
-  }
-  next();
-});
 
 app.use(
   cors({
@@ -27,6 +20,41 @@ app.use(
 );
 
 app.options(/.*/, cors());
+
+const PUBLIC_PATHS = new Set(["/", "/api/login", "/api/register"]);
+
+function buildTokenPayload(user) {
+  const payload = { id: user.id, role: user.role };
+  if (user.role === "student" && user.teacherId) {
+    payload.teacherId = user.teacherId;
+  }
+  return payload;
+}
+
+function signToken(user) {
+  return jwt.sign(buildTokenPayload(user), JWT_SECRET, { expiresIn: "7d" });
+}
+
+function authMiddleware(req, res, next) {
+  if (req.method === "OPTIONS" || PUBLIC_PATHS.has(req.path)) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization || "";
+  const [scheme, token] = authHeader.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({ error: "Missing token." });
+  }
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (error) {
+    return res.status(401).json({ error: "Invalid token." });
+  }
+}
+
+app.use(authMiddleware);
 
 
 
@@ -127,61 +155,55 @@ app.get('/api/library', async (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
-  const { role, name, email, password, teacherId: rawTeacherId } = req.body || {};
-  if (!role || !name || !email || !password) {
-    res.status(400).json({ error: 'Role, name, email, and password are required.' });
-    return;
-  }
+ const { role, name, email, password, shelfCode } = req.body;
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    if (role === "teacher") {
+      const teacherShelfCode = await generateUniqueShelfCode(prisma);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-    if (role === 'teacher') {
       const teacher = await prisma.teacher.create({
         data: {
           name,
           email,
           password: hashedPassword,
+          shelfCode: teacherShelfCode,
         },
+        select: { id: true, name: true, email: true, shelfCode: true },
       });
-      res.json({ id: teacher.id, role: 'teacher', name: teacher.name, email: teacher.email });
-      return;
+
+      const user = { role: "teacher", ...teacher };
+      return res.json({ ...user, token: signToken(user) });
     }
 
-    if (role === 'student') {
-      let teacherId = Number(rawTeacherId);
-      if (!teacherId) {
-        const teacher = await prisma.teacher.findFirst({
-          orderBy: { createdAt: 'asc' },
-        });
-        if (!teacher) {
-          res.status(400).json({ error: 'Create a teacher account first.' });
-          return;
-        }
-        teacherId = teacher.id;
+    if (role === "student") {
+      const teacher = await prisma.teacher.findUnique({
+        where: { shelfCode: shelfCode.trim().toUpperCase() },
+      });
+
+      if (!teacher) {
+        return res.status(400).json({ message: "Invalid shelf code" });
       }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
 
       const student = await prisma.student.create({
         data: {
           name,
           email,
           password: hashedPassword,
-          teacherId,
+          teacherId: teacher.id,
         },
+        select: { id: true, name: true, email: true },
       });
-      res.json({
-        id: student.id,
-        role: 'student',
-        name: student.name,
-        email: student.email || '',
-        teacherId: student.teacherId,
-      });
-      return;
+
+      const user = { role: "student", ...student, teacherId: teacher.id };
+      return res.json({ ...user, token: signToken(user) });
     }
 
-    res.status(400).json({ error: 'Unknown role.' });
-  } catch (error) {
-    res.status(500).json({ error: 'Unable to register user.' });
+    return res.status(400).json({ message: "Invalid role" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
   }
 });
 
@@ -195,16 +217,58 @@ app.post('/api/login', async (req, res) => {
   try {
     const teacher = await prisma.teacher.findUnique({ where: { email } });
     if (teacher) {
-      const valid = await bcrypt.compare(password, teacher.password);
+      const isHashed = typeof teacher.password === "string" && teacher.password.startsWith("$2");
+      let valid = false;
+      if (isHashed) {
+        valid = await bcrypt.compare(password, teacher.password);
+      } else {
+        valid = password === teacher.password;
+      }
       if (!valid) return res.status(401).json({ error: 'Invalid credentials.' });
-      return res.json({ id: teacher.id, role: 'teacher', name: teacher.name, email: teacher.email });
+      if (!isHashed) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await prisma.teacher.update({
+          where: { id: teacher.id },
+          data: { password: hashedPassword },
+        });
+      }
+
+      const user = {
+        id: teacher.id,
+        role: 'teacher',
+        name: teacher.name,
+        email: teacher.email,
+        shelfCode: teacher.shelfCode,
+      };
+      return res.json({ ...user, token: signToken(user) });
     }
 
     const student = await prisma.student.findUnique({ where: { email } });
     if (student) {
-      const valid = await bcrypt.compare(password, student.password);
+      const isHashed = typeof student.password === "string" && student.password.startsWith("$2");
+      let valid = false;
+      if (isHashed) {
+        valid = await bcrypt.compare(password, student.password);
+      } else {
+        valid = password === student.password;
+      }
       if (!valid) return res.status(401).json({ error: 'Invalid credentials.' });
-      return res.json({ id: student.id, role: 'student', name: student.name, email: student.email || '', teacherId: student.teacherId });
+      if (!isHashed) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await prisma.student.update({
+          where: { id: student.id },
+          data: { password: hashedPassword },
+        });
+      }
+
+      const user = {
+        id: student.id,
+        role: 'student',
+        name: student.name,
+        email: student.email || '',
+        teacherId: student.teacherId,
+      };
+      return res.json({ ...user, token: signToken(user) });
     }
 
     return res.status(404).json({ error: 'User not found.' });
@@ -214,6 +278,31 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.patch("/teachers/:teacherId/shelf-code", async (req, res) => {
+  try {
+    const teacherId = Number(req.params.teacherId);
+
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId },
+    });
+
+    if (!teacher) {
+      return res.status(404).json({ message: "Teacher not found" });
+    }
+
+    const newCode = await generateUniqueShelfCode(prisma, 6);
+
+    const updated = await prisma.teacher.update({
+      where: { id: teacherId },
+      data: { shelfCode: newCode },
+      select: { id: false, shelfCode: true },
+    });
+
+    return res.json({ shelfCode: updated.shelfCode });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+});
 
 app.post('/api/books', async (req, res) => {
   const {

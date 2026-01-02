@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import Navbar from "./components/nav.jsx";
@@ -8,19 +8,18 @@ import Student from "./components/Profiles/student.jsx";
 import Teacher from "./components/Profiles/teacher.jsx";
 
 function App() {
-  const [user, setUser] = useState(null);
-
-  useEffect(function () {
+  const [user, setUser] = useState(function () {
     const stored = window.localStorage.getItem("classShelfUser");
     if (!stored) {
-      return;
+      return null;
     }
     try {
-      setUser(JSON.parse(stored));
+      return JSON.parse(stored);
     } catch (error) {
       window.localStorage.removeItem("classShelfUser");
+      return null;
     }
-  }, []);
+  });
 
   function handleUserChange(nextUser) {
     if (!nextUser) {

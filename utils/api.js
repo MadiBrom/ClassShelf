@@ -7,6 +7,7 @@ const OPEN_LIBRARY_FIELDS = [
   "cover_i",
   "first_sentence",
 ].join(",");
+const API_URL = import.meta.env.VITE_DATABASE_URL || "http://localhost:3000";
 
 function pickIsbn13(isbnList) {
   if (!Array.isArray(isbnList)) return null;
@@ -74,9 +75,28 @@ export async function searchGoogleBooks(rawQuery) {
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
+function getStoredUser() {
+  try {
+    const stored = window.localStorage.getItem("classShelfUser");
+    return stored ? JSON.parse(stored) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getAuthToken() {
+  return getStoredUser()?.token || null;
+}
+
 async function apiRequest(path, options) {
+  const headers = { "Content-Type": "application/json", ...(options?.headers || {}) };
+  const token = getAuthToken();
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
 
@@ -84,7 +104,10 @@ async function apiRequest(path, options) {
     const payload = await response.json().catch(function () {
       return null;
     });
-    const message = payload?.error || "Request failed.";
+    if (response.status === 401) {
+      window.localStorage.removeItem("classShelfUser");
+    }
+    const message = payload?.error || payload?.message || "Request failed.";
     throw new Error(message);
   }
 
@@ -104,6 +127,12 @@ export async function loginUser (payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export const refreshShelfCode = async (teacherId) => {
+  return apiRequest(`/teachers/${teacherId}/shelf-code`, {
+    method: "PATCH",
+  });
+};
 
 export async function getLibraryData (teacherId) {
   return apiRequest(`/api/library?teacherId=${teacherId}`);
