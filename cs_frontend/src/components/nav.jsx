@@ -5,9 +5,6 @@ export default function Navbar ({ role, onLogout }) {
     <nav className="nav">
       <div className="nav__brand">ClassShelf</div>
       <div className="nav__links">
-        {/* <Link to="/library">Library</Link> */}
-        {role === "teacher" && <Link to="/teacher">Teacher</Link>}
-        {role === "student" && <Link to="/student">Student</Link>}
         {!role && (
           <>
             <Link to="/login">Login</Link>

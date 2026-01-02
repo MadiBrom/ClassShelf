@@ -8,29 +8,36 @@ import Student from "./components/Profiles/student.jsx";
 import Teacher from "./components/Profiles/teacher.jsx";
 
 function App() {
-  const [role, setRole] = useState("");
+  const [user, setUser] = useState(null);
 
   useEffect(function () {
-    const storedRole = window.localStorage.getItem("classShelfRole") || "";
-    setRole(storedRole);
-  }, []);
-
-  function handleRoleChange(nextRole) {
-    if (!nextRole) {
-      window.localStorage.removeItem("classShelfRole");
-      setRole("");
+    const stored = window.localStorage.getItem("classShelfUser");
+    if (!stored) {
       return;
     }
-    window.localStorage.setItem("classShelfRole", nextRole);
-    setRole(nextRole);
+    try {
+      setUser(JSON.parse(stored));
+    } catch (error) {
+      window.localStorage.removeItem("classShelfUser");
+    }
+  }, []);
+
+  function handleUserChange(nextUser) {
+    if (!nextUser) {
+      window.localStorage.removeItem("classShelfUser");
+      setUser(null);
+      return;
+    }
+    window.localStorage.setItem("classShelfUser", JSON.stringify(nextUser));
+    setUser(nextUser);
   }
 
   return (
     <div className="min-h-screen">
       <Navbar
-        role={role}
+        role={user?.role || ""}
         onLogout={function () {
-          return handleRoleChange("");
+          return handleUserChange(null);
         }}
       />
 
@@ -40,9 +47,9 @@ function App() {
           <Route
             path="/library"
             element={
-              role === "teacher" ? (
+              user?.role === "teacher" ? (
                 <Navigate to="/teacher" replace />
-              ) : role === "student" ? (
+              ) : user?.role === "student" ? (
                 <Navigate to="/student" replace />
               ) : (
                 <Navigate to="/login" replace />
@@ -51,17 +58,29 @@ function App() {
           />
           <Route
             path="/register"
-            element={<Register onRegister={handleRoleChange} />}
+            element={<Register onRegister={handleUserChange} />}
           />
-          <Route path="/login" element={<Login onLogin={handleRoleChange} />} />
+          <Route path="/login" element={<Login onLogin={handleUserChange} />} />
 
           <Route
             path="/student"
-            element={role === "student" ? <Student /> : <Navigate to="/login" replace />}
+            element={
+              user?.role === "student" ? (
+                <Student user={user} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/teacher"
-            element={role === "teacher" ? <Teacher /> : <Navigate to="/login" replace />}
+            element={
+              user?.role === "teacher" ? (
+                <Teacher user={user} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
 
           <Route path="*" element={<div>404 bestie, page not found</div>} />

@@ -1,65 +1,26 @@
-import { useMemo, useRef, useState } from "react";
-import { searchGoogleBooks } from "../api.js";
-
-const initialCatalog = [
-  {
-    id: "cat-1",
-    title: "Charlotte's Web",
-    authors: ["E. B. White"],
-    isbn: "9780061124952",
-    coverUrl: "https://books.google.com/books/content?id=cat-1&printsec=frontcover&img=1&zoom=1",
-    description: "A classic story of friendship, loyalty, and the power of words.",
-    tags: { genre: "Classics", readingLevel: "3", interest: "Animals" },
-    source: "google",
-  },
-  {
-    id: "cat-2",
-    title: "The Wild Robot",
-    authors: ["Peter Brown"],
-    isbn: "9780316381994",
-    coverUrl: "https://books.google.com/books/content?id=cat-2&printsec=frontcover&img=1&zoom=1",
-    description: "A robot learns to survive and belong on a wild island.",
-    tags: { genre: "Adventure", readingLevel: "4", interest: "STEM" },
-    source: "manual",
-  },
-];
-
-const initialShelf = [
-  { bookId: "cat-1", total: 3, available: 2 },
-  { bookId: "cat-2", total: 2, available: 2 },
-];
-
-const initialStudents = [
-  { id: "stu-1", name: "Avery Johnson" },
-  { id: "stu-2", name: "Mateo Garcia" },
-  { id: "stu-3", name: "Riley Chen" },
-];
-
-const initialRequests = [
-  { id: "req-1", bookId: "cat-1", studentId: "stu-1", status: "pending" },
-];
-
-const initialCheckouts = [
-  {
-    id: "co-1",
-    bookId: "cat-1",
-    studentId: "stu-2",
-    status: "checked_out",
-    returnRequested: false,
-    returnNotes: "",
-  },
-];
+import { useEffect, useMemo, useState } from "react";
+import {
+  approveRequest,
+  createBook,
+  createRequest,
+  denyRequest,
+  getLibraryData,
+  requestReturn,
+  returnCheckout,
+  searchGoogleBooks,
+  updateShelf,
+} from "../../../api.js";
 
 const MAX_BAG = 5;
 
-export default function Library ({ initialRole = "teacher" }) {
+export default function Library ({ initialRole = "teacher", user }) {
   const [role, setRole] = useState(initialRole);
-  const [catalog, setCatalog] = useState(initialCatalog);
-  const [shelf, setShelf] = useState(initialShelf);
-  const [students] = useState(initialStudents);
-  const [activeStudentId, setActiveStudentId] = useState(initialStudents[0].id);
-  const [requests, setRequests] = useState(initialRequests);
-  const [checkouts, setCheckouts] = useState(initialCheckouts);
+  const [catalog, setCatalog] = useState([]);
+  const [shelf, setShelf] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [activeStudentId, setActiveStudentId] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [checkouts, setCheckouts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchSource, setSearchSource] = useState("catalog");
@@ -76,18 +37,40 @@ export default function Library ({ initialRole = "teacher" }) {
   });
   const [returnNotes, setReturnNotes] = useState({});
   const [feedback, setFeedback] = useState("");
-  const idCounter = useRef(10);
+  const [isLoading, setIsLoading] = useState(false);
 
-  function createId(prefix) {
-    idCounter.current += 1;
-    return `${prefix}-${idCounter.current}`;
+  const teacherId = user
+    ? user.role === "teacher"
+      ? user.id
+      : user.teacherId
+    : null;
+
+  async function reloadLibrary() {
+    if (!teacherId) return;
+    setIsLoading(true);
+    setFeedback("");
+    try {
+      const data = await getLibraryData(teacherId);
+      setCatalog(data.catalog);
+      setShelf(data.shelf);
+      setStudents(data.students);
+      setRequests(data.requests);
+      setCheckouts(data.checkouts);
+      if (user?.role === "student") {
+        setActiveStudentId(user.id);
+      } else if (!activeStudentId && data.students.length) {
+        setActiveStudentId(data.students[0].id);
+      }
+    } catch (error) {
+      setFeedback(error.message || "Unable to load library data.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  const activeStudent = useMemo(function () {
-    return students.find(function (student) {
-      return student.id === activeStudentId;
-    });
-  }, [students, activeStudentId]);
+  useEffect(function () {
+    reloadLibrary();
+  }, [teacherId]);
 
   const shelfItems = useMemo(function () {
     return shelf.map(function (entry) {
@@ -99,18 +82,17 @@ export default function Library ({ initialRole = "teacher" }) {
     });
   }, [catalog, shelf]);
 
- 
+  const activeCheckouts = useMemo(function () {
+    return checkouts.filter(function (checkout) {
+      return checkout.status === "checked_out";
+    });
+  }, [checkouts]);
+
   const studentCheckouts = useMemo(function () {
     return activeCheckouts.filter(function (checkout) {
       return checkout.studentId === activeStudentId;
     });
   }, [activeCheckouts, activeStudentId]);
-  
- const activeCheckouts = useMemo(function () {
-    return checkouts.filter(function (checkout) {
-      return checkout.status === "checked_out";
-    });
-  }, [checkouts]);
 
   const studentRequests = useMemo(function () {
     return requests.filter(function (request) {
@@ -121,14 +103,6 @@ export default function Library ({ initialRole = "teacher" }) {
   function getShelfEntry(bookId) {
     return shelf.find(function (entry) {
       return entry.bookId === bookId;
-    });
-  }
-
-  function updateShelf(bookId, updater) {
-    setShelf(function (prev) {
-      return prev.map(function (entry) {
-        return entry.bookId === bookId ? updater(entry) : entry;
-      });
     });
   }
 
@@ -198,65 +172,33 @@ export default function Library ({ initialRole = "teacher" }) {
     setSearchSource("google");
   }
 
-  function addToShelf(bookId, count) {
+  async function addToShelf(bookId, count) {
+    if (!teacherId) return;
     const copies = Number(count) || 1;
     if (copies <= 0) {
       setFeedback("Copies must be at least 1.");
       return;
     }
-    const existing = getShelfEntry(bookId);
-    if (existing) {
-      updateShelf(bookId, function (entry) {
-        return {
-          ...entry,
-          total: entry.total + copies,
-          available: entry.available + copies,
-        };
-      });
-    } else {
-      setShelf(function (prev) {
-        return [...prev, { bookId, total: copies, available: copies }];
-      });
+
+    try {
+      await updateShelf({ teacherId, bookId, delta: copies });
+      await reloadLibrary();
+      setFeedback("Added to your class shelf.");
+    } catch (error) {
+      setFeedback(error.message || "Unable to update shelf.");
     }
-    setFeedback("Added to your class shelf.");
   }
 
-  function handleManualAdd(event) {
+  async function handleManualAdd(event) {
     event.preventDefault();
+    if (!teacherId) return;
     if (!manualForm.title.trim()) {
       setFeedback("Title is required for manual entries.");
       return;
     }
 
-  function handleAddFromSearch(book) {
-    const match = findCatalogMatch(book);
-    let catalogId = match?.id;
-
-    if (!catalogId) {
-      catalogId = createId("cat");
-      setCatalog(function (prev) {
-        return [
-          ...prev,
-          {
-            id: catalogId,
-            googleId: book.googleId,
-            title: book.title,
-            authors: book.authors,
-            isbn: book.isbn,
-            coverUrl: book.coverUrl,
-            description: book.description,
-            tags: { genre: "", readingLevel: "", interest: "" },
-            source: book.source,
-          },
-        ];
-      });
-    }
-
-    addToShelf(catalogId, copiesDraft[book.id] || 1);
-  }
-
     const newBook = {
-      id: createId("cat"),
+      teacherId,
       title: manualForm.title.trim(),
       authors: manualForm.authors
         ? manualForm.authors.split(",").map(function (value) {
@@ -274,24 +216,58 @@ export default function Library ({ initialRole = "teacher" }) {
       source: "manual",
     };
 
-    setCatalog(function (prev) {
-      return [...prev, newBook];
-    });
-    addToShelf(newBook.id, 1);
-    setManualForm({
-      title: "",
-      authors: "",
-      isbn: "",
-      description: "",
-      coverUrl: "",
-      genre: "",
-      readingLevel: "",
-      interest: "",
-    });
+    try {
+      const created = await createBook(newBook);
+      await addToShelf(created.id, 1);
+      setManualForm({
+        title: "",
+        authors: "",
+        isbn: "",
+        description: "",
+        coverUrl: "",
+        genre: "",
+        readingLevel: "",
+        interest: "",
+      });
+    } catch (error) {
+      setFeedback(error.message || "Unable to save book.");
+    }
   }
 
-  function handleRequest(bookId) {
+  async function handleAddFromSearch(book) {
+    if (!teacherId) return;
+    const match = findCatalogMatch(book);
+    let catalogId = match?.id;
+
+    try {
+      if (!catalogId) {
+        const created = await createBook({
+          teacherId,
+          googleId: book.googleId,
+          title: book.title,
+          authors: book.authors,
+          isbn: book.isbn,
+          coverUrl: book.coverUrl,
+          description: book.description,
+          tags: { genre: "", readingLevel: "", interest: "" },
+          source: book.source,
+        });
+        catalogId = created.id;
+      }
+
+      await addToShelf(catalogId, copiesDraft[book.id] || 1);
+    } catch (error) {
+      setFeedback(error.message || "Unable to save book.");
+    }
+  }
+
+  async function handleRequest(bookId) {
     setFeedback("");
+    if (!activeStudentId) {
+      setFeedback("Select a student before requesting a book.");
+      return;
+    }
+
     if (studentCheckouts.length >= MAX_BAG) {
       setFeedback("Student already has 5 books. Return one before requesting more.");
       return;
@@ -309,114 +285,52 @@ export default function Library ({ initialRole = "teacher" }) {
       return;
     }
 
-    setRequests(function (prev) {
-      return [
-        ...prev,
-        {
-          id: createId("req"),
-          bookId,
-          studentId: activeStudentId,
-          status: "pending",
-        },
-      ];
-    });
+    try {
+      await createRequest({ bookId, studentId: activeStudentId });
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to create request.");
+    }
   }
 
-  function handleApproveRequest(requestId) {
+  async function handleApproveRequest(requestId) {
     setFeedback("");
-    const request = requests.find(function (item) {
-      return item.id === requestId;
-    });
-    if (!request) return;
-
-    const entry = getShelfEntry(request.bookId);
-    if (!entry || entry.available <= 0) {
-      setFeedback("No available copies. Add copies before approving.");
-      return;
+    try {
+      await approveRequest(requestId);
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to approve request.");
     }
+  }
 
-    const studentBagCount = checkouts.filter(function (checkout) {
-      return (
-        checkout.studentId === request.studentId &&
-        checkout.status === "checked_out"
-      );
-    }).length;
-    if (studentBagCount >= MAX_BAG) {
-      setFeedback("Student has reached the 5 book limit.");
-      return;
+  async function handleDenyRequest(requestId) {
+    try {
+      await denyRequest(requestId);
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to deny request.");
     }
-
-    updateShelf(request.bookId, function (item) {
-      return {
-        ...item,
-        available: item.available - 1,
-      };
-    });
-
-    setCheckouts(function (prev) {
-      return [
-        ...prev,
-        {
-          id: createId("co"),
-          bookId: request.bookId,
-          studentId: request.studentId,
-          status: "checked_out",
-          returnRequested: false,
-          returnNotes: "",
-        },
-      ];
-    });
-
-    setRequests(function (prev) {
-      return prev.map(function (item) {
-        return item.id === requestId ? { ...item, status: "approved" } : item;
-      });
-    });
   }
 
-  function handleDenyRequest(requestId) {
-    setRequests(function (prev) {
-      return prev.map(function (item) {
-        return item.id === requestId ? { ...item, status: "denied" } : item;
-      });
-    });
+  async function handleReturn(checkoutId) {
+    try {
+      await returnCheckout(checkoutId, returnNotes[checkoutId] || "");
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to mark returned.");
+    }
   }
 
-  function handleReturn(checkoutId) {
-    const checkout = checkouts.find(function (item) {
-      return item.id === checkoutId;
-    });
-    if (!checkout) return;
-
-    updateShelf(checkout.bookId, function (item) {
-      return {
-        ...item,
-        available: item.available + 1,
-      };
-    });
-
-    setCheckouts(function (prev) {
-      return prev.map(function (item) {
-        return item.id === checkoutId
-          ? {
-              ...item,
-              status: "returned",
-              returnNotes: returnNotes[checkoutId] || item.returnNotes,
-            }
-          : item;
-      });
-    });
+  async function handleReturnRequest(checkoutId) {
+    try {
+      await requestReturn(checkoutId);
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to request return.");
+    }
   }
 
-  function handleReturnRequest(checkoutId) {
-    setCheckouts(function (prev) {
-      return prev.map(function (item) {
-        return item.id === checkoutId ? { ...item, returnRequested: true } : item;
-      });
-    });
-  }
-
-  function adjustCopies(bookId, delta) {
+  async function adjustCopies(bookId, delta) {
     const entry = getShelfEntry(bookId);
     if (!entry) return;
     const checkedOut = entry.total - entry.available;
@@ -424,13 +338,13 @@ export default function Library ({ initialRole = "teacher" }) {
       setFeedback("Cannot reduce copies below the number checked out.");
       return;
     }
-    updateShelf(bookId, function (item) {
-      return {
-        ...item,
-        total: item.total + delta,
-        available: item.available + (delta > 0 ? delta : Math.min(delta, 0)),
-      };
-    });
+
+    try {
+      await updateShelf({ teacherId, bookId, delta });
+      await reloadLibrary();
+    } catch (error) {
+      setFeedback(error.message || "Unable to update copies.");
+    }
   }
 
   return (
@@ -460,9 +374,9 @@ export default function Library ({ initialRole = "teacher" }) {
             <label className="control">
               Student
               <select
-                value={activeStudentId}
+                value={activeStudentId || ""}
                 onChange={function (event) {
-                  setActiveStudentId(event.target.value);
+                  setActiveStudentId(Number(event.target.value));
                 }}
               >
                 {students.map(function (student) {
@@ -479,6 +393,7 @@ export default function Library ({ initialRole = "teacher" }) {
       </header>
 
       {feedback && <div className="notice">{feedback}</div>}
+      {isLoading && <div className="notice">Loading your library...</div>}
 
       {role === "teacher" && (
         <section className="panel">
@@ -646,7 +561,7 @@ export default function Library ({ initialRole = "teacher" }) {
                 }}
               />
             </div>
-            <button type="submit">Save to catalog + add 1 copy</button>
+            <button type="submit">Add & Save</button>
           </form>
         </section>
       )}
@@ -679,7 +594,7 @@ export default function Library ({ initialRole = "teacher" }) {
                           adjustCopies(entry.bookId, 1);
                         }}
                       >
-                        +1 copy
+                        +
                       </button>
                       <button
                         type="button"
@@ -687,7 +602,7 @@ export default function Library ({ initialRole = "teacher" }) {
                           adjustCopies(entry.bookId, -1);
                         }}
                       >
-                        -1 copy
+                        -
                       </button>
                     </div>
                   ) : (

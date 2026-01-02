@@ -1,16 +1,25 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { registerUser } from "../../../api.js";
 
 export default function Register ({ onRegister }) {
   const [role, setRole] = useState("teacher");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    onRegister(role);
-    navigate(role === "teacher" ? "/teacher" : "/student");
+    setError("");
+    try {
+      const user = await registerUser({ role, name, email, password });
+      onRegister(user);
+      navigate(role === "teacher" ? "/teacher" : "/student");
+    } catch (err) {
+      setError(err.message || "Unable to register.");
+    }
   }
 
   return (
@@ -20,6 +29,7 @@ export default function Register ({ onRegister }) {
         Choose a role to see the right library experience after registration.
       </p>
       <form className="stack" onSubmit={handleSubmit}>
+        {error && <p className="notice">{error}</p>}
         <label className="control">
           Role
           <select
@@ -52,6 +62,17 @@ export default function Register ({ onRegister }) {
               setEmail(event.target.value);
             }}
             placeholder="you@classshelf.com"
+          />
+        </label>
+        <label className="control">
+          Password
+          <input
+            type="password"
+            value={password}
+            onChange={function (event) {
+              setPassword(event.target.value);
+            }}
+            placeholder="Create a password"
           />
         </label>
         <button type="submit">Register and continue</button>
