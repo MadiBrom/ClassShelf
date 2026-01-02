@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 
 const Navbar = ({ role, onLogout }) => {
@@ -9,8 +8,12 @@ const Navbar = ({ role, onLogout }) => {
         {/* <Link to="/library">Library</Link> */}
         {role === "teacher" && <Link to="/teacher">Teacher</Link>}
         {role === "student" && <Link to="/student">Student</Link>}
-        <Link to="/login">Login</Link>
-        <Link to="/register">Register</Link>
+        {!role && (
+          <>
+            <Link to="/login">Login</Link>
+            <Link to="/register">Register</Link>
+          </>
+        )}
         {role && (
           <button type="button" onClick={onLogout}>
             Log out ({role})
@@ -19,6 +22,6 @@ const Navbar = ({ role, onLogout }) => {
       </div>
     </nav>
   );
-}
+};
 
 export default Navbar;

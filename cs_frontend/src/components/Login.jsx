@@ -1,7 +1,4 @@
-//All types of users will be able to login here
-//Each different access level will be redirected to a different profile page page
-
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Login = ({ onLogin }) => {

@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-import Navbar from "./components/navbar.jsx";
-import Library from "./components/library.jsx";
+import Navbar from "./components/nav.jsx";
 import Register from "./components/register.jsx";
 import Login from "./components/login.jsx";
 import Student from "./components/Profiles/student.jsx";
