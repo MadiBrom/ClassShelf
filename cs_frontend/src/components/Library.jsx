@@ -99,17 +99,18 @@ export default function Library ({ initialRole = "teacher" }) {
     });
   }, [catalog, shelf]);
 
-  const activeCheckouts = useMemo(function () {
-    return checkouts.filter(function (checkout) {
-      return checkout.status === "checked_out";
-    });
-  }, [checkouts]);
-
+ 
   const studentCheckouts = useMemo(function () {
     return activeCheckouts.filter(function (checkout) {
       return checkout.studentId === activeStudentId;
     });
   }, [activeCheckouts, activeStudentId]);
+  
+ const activeCheckouts = useMemo(function () {
+    return checkouts.filter(function (checkout) {
+      return checkout.status === "checked_out";
+    });
+  }, [checkouts]);
 
   const studentRequests = useMemo(function () {
     return requests.filter(function (request) {
