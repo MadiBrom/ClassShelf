@@ -76,7 +76,7 @@ export default function Login({ onLogin }) {
           />
         </label>
 
-        <label className="control control--checkbox">
+        <label className="--checkbox">
           <input
             type="checkbox"
             checked={rememberMe}

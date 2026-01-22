@@ -131,6 +131,17 @@ main {
   font-size: 0.85rem;
 }
 
+.control--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.control--checkbox input {
+  width: auto;
+  accent-color: #1d1b1b;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -289,6 +300,7 @@ main {
 
 .status--approved {
   background: #d9f0d5;
+  
 }
 
 .status--denied {

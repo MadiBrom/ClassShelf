@@ -16,6 +16,7 @@ const MAX_BAG = 5;
 
 export default function Library({ user }) {
   const isTeacher = user?.role === "teacher";
+  const isStudent = user?.role === "student";
 
   const [catalog, setCatalog] = useState([]);
   const [shelf, setShelf] = useState([]);
@@ -117,6 +118,10 @@ export default function Library({ user }) {
   const studentCheckouts = useMemo(() => {
     return activeCheckouts.filter((checkout) => checkout.studentId === activeStudentId);
   }, [activeCheckouts, activeStudentId]);
+
+  const studentRequests = useMemo(() => {
+    return requests.filter((request) => request.studentId === activeStudentId);
+  }, [requests, activeStudentId]);
 
   const activeStudent = useMemo(() => {
     return students.find((s) => s.id === activeStudentId) || null;
@@ -453,26 +458,6 @@ export default function Library({ user }) {
             </div>
           )}
         </div>
-
-        {isTeacher && (
-          <div className="library__controls">
-            <label className="control">
-              View student
-              <select
-                value={activeStudentId || ""}
-                onChange={(event) => setActiveStudentId(Number(event.target.value))}
-                disabled={!students.length}
-              >
-                {!students.length && <option value="">No students yet</option>}
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
       </header>
 
       {feedback && <div className="notice">{feedback}</div>}
@@ -630,26 +615,46 @@ export default function Library({ user }) {
                   Total: {entry.total} | Available: {entry.available} | Checked out: {entry.checkedOut}
                 </p>
 
-                {isTeacher ? (
-                  <div className="card__actions">
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, 1)}>
-                      +
-                    </button>
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, -1)}>
-                      -
-                    </button>
-                  </div>
-                ) : (
-                  <div className="card__actions">
-                    <button type="button" onClick={(event) => handleRequest(event, entry.bookId)}>
-                      {entry.available > 0 ? "Request checkout" : "Join waitlist"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
+              {isTeacher ? (
+                <div className="card__actions">
+                  <button type="button" onClick={() => adjustCopies(entry.bookId, 1)}>
+                    +
+                  </button>
+                  <button type="button" onClick={() => adjustCopies(entry.bookId, -1)}>
+                    -
+                  </button>
+                </div>
+              ) : (
+                <div className="card__actions">
+                  {(() => {
+                    const alreadyRequested = requests.some(
+                      (request) =>
+                        request.bookId === entry.bookId &&
+                        request.studentId === activeStudentId &&
+                        request.status === "pending"
+                    );
+                    const label = alreadyRequested
+                      ? "Requested"
+                      : entry.available > 0
+                      ? "Request checkout"
+                      : "Join waitlist";
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={(event) => handleRequest(event, entry.bookId)}
+                        disabled={alreadyRequested}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
       </section>
 
       {isTeacher && (
@@ -720,25 +725,45 @@ export default function Library({ user }) {
         </section>
       )}
 
-      {isTeacher && (
+      {(isTeacher || isStudent) && (
         <section className="panel">
-          <h2>Student</h2>
+          <h2>{isTeacher ? "Student" : "My Book Bag"}</h2>
 
-          {!students.length && (
+          {isTeacher && !students.length && (
             <div className="empty">
               No students yet. Share your class code with students so they can join your class.
             </div>
           )}
 
-          {students.length > 0 && !activeStudentId && (
+          {isTeacher && students.length > 0 && !activeStudentId && (
             <div className="empty">Pick a student from the dropdown to view their bag and requests.</div>
+          )}
+
+          {isStudent && !activeStudentId && (
+            <div className="empty">Loading your book bag...</div>
           )}
 
           {activeStudentId && (
             <>
-              <p className="subtle">
-                Viewing: <strong>{activeStudent?.name || "Student"}</strong>
-              </p>
+              {isTeacher && (
+          <div className="library__controls">
+            <label className="control">
+              View student
+              <select
+                value={activeStudentId || ""}
+                onChange={(event) => setActiveStudentId(Number(event.target.value))}
+                disabled={!students.length}
+              >
+                {!students.length && <option value="">No students yet</option>}
+                {students.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {student.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+              )}
 
               <h3>
                 Book Bag ({studentCheckouts.length}/{MAX_BAG})
@@ -751,9 +776,6 @@ export default function Library({ user }) {
                       <div className="card__body">
                         <h3>{book?.title}</h3>
                         <p>{(book?.authors || []).join(", ")}</p>
-                        <p className="subtle">
-                          Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
-                        </p>
                       </div>
                     </article>
                   );

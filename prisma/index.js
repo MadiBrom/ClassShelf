@@ -177,8 +177,13 @@ app.post('/api/register', async (req, res) => {
     }
 
     if (role === "student") {
+      const normalizedShelfCode = String(shelfCode || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+
       const teacher = await prisma.teacher.findUnique({
-        where: { shelfCode: shelfCode.trim().toUpperCase() },
+        where: { shelfCode: normalizedShelfCode },
       });
 
       if (!teacher) {
