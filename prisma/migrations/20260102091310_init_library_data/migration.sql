@@ -16,7 +16,6 @@ CREATE TABLE "Book" (
     "title" TEXT NOT NULL,
     "authors" TEXT[],
     "googleId" TEXT,
-    "isbn" TEXT,
     "coverUrl" TEXT,
     "description" TEXT,
     "genre" TEXT,

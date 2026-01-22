@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveRequest,
   createBook,
@@ -36,7 +36,6 @@ export default function Library({ user }) {
   const [manualForm, setManualForm] = useState({
     title: "",
     authors: "",
-    isbn: "",
     description: "",
     coverUrl: "",
     genre: "",
@@ -73,7 +72,14 @@ export default function Library({ user }) {
       setCatalog(data.catalog || []);
       setShelf(data.shelf || []);
       setStudents(data.students || []);
-      setRequests(data.requests || []);
+      setRequests((prev) => {
+        const pending = data.requests || [];
+        const resolved = (prev || []).filter((request) => request.status !== "pending");
+        const resolvedFiltered = resolved.filter(
+          (request) => !pending.some((item) => item.id === request.id)
+        );
+        return [...pending, ...resolvedFiltered];
+      });
       setCheckouts(data.checkouts || []);
 
       if (!isTeacher) {
@@ -112,10 +118,6 @@ export default function Library({ user }) {
     return activeCheckouts.filter((checkout) => checkout.studentId === activeStudentId);
   }, [activeCheckouts, activeStudentId]);
 
-  const studentRequests = useMemo(() => {
-    return requests.filter((request) => request.studentId === activeStudentId);
-  }, [requests, activeStudentId]);
-
   const activeStudent = useMemo(() => {
     return students.find((s) => s.id === activeStudentId) || null;
   }, [students, activeStudentId]);
@@ -126,7 +128,6 @@ export default function Library({ user }) {
     if (!candidate) return null;
 
     return catalog.find((book) => {
-      if (book.isbn && candidate.isbn && book.isbn === candidate.isbn) return true;
       if (candidate.googleId && book.googleId === candidate.googleId) return true;
 
       return (
@@ -181,7 +182,7 @@ export default function Library({ user }) {
     }
 
     const localResults = catalog.filter((book) => {
-      const target = `${book.title} ${(book.authors || []).join(" ")} ${book.isbn || ""}`;
+      const target = `${book.title} ${(book.authors || []).join(" ")}`;
       return target.toLowerCase().includes(query.toLowerCase());
     });
 
@@ -205,7 +206,6 @@ export default function Library({ user }) {
         googleId: result.googleId,
         title: result.title,
         authors: result.authors,
-        isbn: result.isbn13,
         coverUrl: result.coverUrl,
         description: result.description,
         source: "google",
@@ -247,7 +247,6 @@ export default function Library({ user }) {
       authors: manualForm.authors
         ? manualForm.authors.split(",").map((value) => value.trim())
         : ["Unknown"],
-      isbn: manualForm.isbn.trim() || null,
       coverUrl: manualForm.coverUrl.trim() || null,
       description: manualForm.description.trim(),
       tags: {
@@ -265,7 +264,6 @@ export default function Library({ user }) {
       setManualForm({
         title: "",
         authors: "",
-        isbn: "",
         description: "",
         coverUrl: "",
         genre: "",
@@ -290,7 +288,6 @@ export default function Library({ user }) {
           googleId: book.googleId,
           title: book.title,
           authors: book.authors,
-          isbn: book.isbn,
           coverUrl: book.coverUrl,
           description: book.description,
           tags: { genre: "", readingLevel: "", interest: "" },
@@ -316,6 +313,12 @@ export default function Library({ user }) {
 
     if (studentCheckouts.length >= MAX_BAG) {
       setFeedback("Student already has 5 books. Return one before requesting more.");
+      return;
+    }
+
+    const alreadyCheckedOut = studentCheckouts.some((checkout) => checkout.bookId === bookId);
+    if (alreadyCheckedOut) {
+      setFeedback("Student already has this book checked out.");
       return;
     }
 
@@ -345,7 +348,25 @@ export default function Library({ user }) {
     setFeedback("");
 
     try {
-      await approveRequest(requestId);
+      const result = await approveRequest(requestId);
+      const requestStatus = result?.request?.status || "approved";
+
+      setRequests((prev) =>
+        prev.map((request) =>
+          request.id === requestId ? { ...request, status: requestStatus } : request
+        )
+      );
+
+      if (result?.checkout) {
+        setCheckouts((prev) => [result.checkout, ...prev]);
+        setShelf((prev) =>
+          prev.map((entry) =>
+            entry.bookId === result.checkout.bookId
+              ? { ...entry, available: Math.max(0, entry.available - 1) }
+              : entry
+          )
+        );
+      }
       await reloadLibrary();
     } catch (error) {
       setFeedback(error.message || "Unable to approve request.");
@@ -356,7 +377,14 @@ export default function Library({ user }) {
     event.preventDefault();
 
     try {
-      await denyRequest(requestId);
+      const result = await denyRequest(requestId);
+      const requestStatus = result?.status || result?.request?.status || "denied";
+
+      setRequests((prev) =>
+        prev.map((request) =>
+          request.id === requestId ? { ...request, status: requestStatus } : request
+        )
+      );
       await reloadLibrary();
     } catch (error) {
       setFeedback(error.message || "Unable to deny request.");
@@ -457,14 +485,12 @@ export default function Library({ user }) {
           <form className="search" onSubmit={handleSearch}>
             <input
               type="search"
-              placeholder="Search by title, author, ISBN..."
+              placeholder="Search by title or author..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
             <button type="submit">Search</button>
           </form>
-
-          <p className="subtle">Searching your catalog first, then Google Books if nothing matches.</p>
 
           <div className="grid">
             {searchResults.map((result) => (
@@ -480,7 +506,6 @@ export default function Library({ user }) {
                 <div className="card__body">
                   <h3>{result.title}</h3>
                   <p>{(result.authors || []).join(", ")}</p>
-                  <p className="subtle">{result.isbn ? `ISBN ${result.isbn}` : "No ISBN listed"}</p>
                   <p className="subtle">{result.description}</p>
 
                   <div className="card__meta">
@@ -506,72 +531,83 @@ export default function Library({ user }) {
 
             {!searchResults.length && (
               <div className="empty">
-                {searchSource === "catalog"
-                  ? "Search to find books in your catalog or Google Books."
-                  : "No Google Books matches. Add it manually below."}
+                {searchSource === "catalog" ? (
+                  <p>Search to find books in your catalog or Google Books.</p>
+                ) : (
+                  <form className="manual" onSubmit={handleManualAdd}>
+                    <h3>Manual Entry</h3>
+
+                    <div className="manual__grid">
+                      <input
+                        type="text"
+                        placeholder="Title *"
+                        value={manualForm.title}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, title: event.target.value }))
+                        }
+                        required
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Authors (comma separated)"
+                        value={manualForm.authors}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, authors: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="url"
+                        placeholder="Cover URL"
+                        value={manualForm.coverUrl}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Genre"
+                        value={manualForm.genre}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, genre: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Reading level"
+                        value={manualForm.readingLevel}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, readingLevel: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Interest"
+                        value={manualForm.interest}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, interest: event.target.value }))
+                        }
+                      />
+
+                      <textarea
+                        placeholder="Description"
+                        value={manualForm.description}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, description: event.target.value }))
+                        }
+                      />
+                    </div>
+
+                    <button type="submit">Add & Save</button>
+                  </form>
+                )}
               </div>
             )}
           </div>
-
-          <form className="manual" onSubmit={handleManualAdd}>
-            <h3>Manual Entry</h3>
-            <div className="manual__grid">
-              <input
-                type="text"
-                placeholder="Title *"
-                value={manualForm.title}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, title: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Authors (comma separated)"
-                value={manualForm.authors}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, authors: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="ISBN"
-                value={manualForm.isbn}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, isbn: event.target.value }))}
-              />
-              <input
-                type="url"
-                placeholder="Cover URL"
-                value={manualForm.coverUrl}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Genre"
-                value={manualForm.genre}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, genre: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Reading level"
-                value={manualForm.readingLevel}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, readingLevel: event.target.value }))
-                }
-              />
-              <input
-                type="text"
-                placeholder="Interest"
-                value={manualForm.interest}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, interest: event.target.value }))
-                }
-              />
-              <textarea
-                placeholder="Description"
-                value={manualForm.description}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, description: event.target.value }))
-                }
-              />
-            </div>
-            <button type="submit">Add & Save</button>
-          </form>
         </section>
       )}
 
@@ -615,42 +651,6 @@ export default function Library({ user }) {
           ))}
         </div>
       </section>
-
-      {!isTeacher && (
-        <section className="panel">
-          <h2>
-            My Book Bag ({studentCheckouts.length}/{MAX_BAG})
-          </h2>
-
-          <div className="grid">
-            {studentCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
-
-              return (
-                <article key={checkout.id} className="card">
-                  <div className="card__body">
-                    <h3>{book?.title}</h3>
-                    <p>{(book?.authors || []).join(", ")}</p>
-                    <p className="subtle">
-                      Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
-                    </p>
-                    <div className="card__actions">
-                      <button
-                        type="button"
-                        onClick={(event) => handleReturnRequest(event, checkout.id)}
-                        disabled={checkout.returnRequested}
-                      >
-                        Request return
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-            {!studentCheckouts.length && <div className="empty">No books checked out.</div>}
-          </div>
-        </section>
-      )}
 
       {isTeacher && (
         <section className="panel">
@@ -767,4 +767,3 @@ export default function Library({ user }) {
     </div>
   );
 }
-Library;
