@@ -61,6 +61,12 @@ button:hover {
   opacity: 0.9;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 input,
 select,
 textarea {

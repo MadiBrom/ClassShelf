@@ -13,6 +13,8 @@ import {
 } from "../../../utils/api.js";
 
 const MAX_BAG = 5;
+const REQUEST_EXPIRY_MS = 5 * 60 * 1000;
+const REQUEST_PRUNE_INTERVAL_MS = 30 * 1000;
 
 export default function Library({ user }) {
   const isTeacher = user?.role === "teacher";
@@ -24,6 +26,7 @@ export default function Library({ user }) {
   const [activeStudentId, setActiveStudentId] = useState(null);
   const [requests, setRequests] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
+  const [requestNow, setRequestNow] = useState(Date.now());
 
   const [shelfCode, setShelfCode] = useState((user?.shelfCode || "").toUpperCase());
   const [isRefreshingCode, setIsRefreshingCode] = useState(false);
@@ -74,12 +77,22 @@ export default function Library({ user }) {
       setShelf(data.shelf || []);
       setStudents(data.students || []);
       setRequests((prev) => {
-        const pending = data.requests || [];
-        const resolved = (prev || []).filter((request) => request.status !== "pending");
-        const resolvedFiltered = resolved.filter(
-          (request) => !pending.some((item) => item.id === request.id)
-        );
-        return [...pending, ...resolvedFiltered];
+        const now = Date.now();
+        const pending = (data.requests || []).map((request) => ({
+          ...request,
+          status: request.status || "pending",
+        }));
+        const pendingIds = new Set(pending.map((request) => request.id));
+        const resolved = (prev || [])
+          .filter((request) => request.status !== "pending")
+          .map((request) => ({
+            ...request,
+            resolvedAt: request.resolvedAt || now,
+          }))
+          .filter((request) => now - request.resolvedAt < REQUEST_EXPIRY_MS)
+          .filter((request) => !pendingIds.has(request.id));
+
+        return [...pending, ...resolved];
       });
       setCheckouts(data.checkouts || []);
 
@@ -102,6 +115,28 @@ export default function Library({ user }) {
   useEffect(() => {
     reloadLibrary();
   }, [reloadLibrary]);
+
+  useEffect(() => {
+    if (!user) {
+      setRequests([]);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRequestNow(Date.now());
+    }, REQUEST_PRUNE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const visibleRequests = useMemo(() => {
+    return (requests || []).filter((request) => {
+      if (request.status === "pending") return true;
+      const resolvedAt = request.resolvedAt || requestNow;
+      return requestNow - resolvedAt < REQUEST_EXPIRY_MS;
+    });
+  }, [requestNow, requests]);
 
   const shelfItems = useMemo(() => {
     return shelf.map((entry) => {
@@ -356,9 +391,12 @@ export default function Library({ user }) {
       const result = await approveRequest(requestId);
       const requestStatus = result?.request?.status || "approved";
 
+      const resolvedAt = Date.now();
       setRequests((prev) =>
         prev.map((request) =>
-          request.id === requestId ? { ...request, status: requestStatus } : request
+          request.id === requestId
+            ? { ...request, status: requestStatus, resolvedAt }
+            : request
         )
       );
 
@@ -385,9 +423,12 @@ export default function Library({ user }) {
       const result = await denyRequest(requestId);
       const requestStatus = result?.status || result?.request?.status || "denied";
 
+      const resolvedAt = Date.now();
       setRequests((prev) =>
         prev.map((request) =>
-          request.id === requestId ? { ...request, status: requestStatus } : request
+          request.id === requestId
+            ? { ...request, status: requestStatus, resolvedAt }
+            : request
         )
       );
       await reloadLibrary();
@@ -633,7 +674,12 @@ export default function Library({ user }) {
                         request.studentId === activeStudentId &&
                         request.status === "pending"
                     );
-                    const label = alreadyRequested
+                    const alreadyCheckedOut = studentCheckouts.some(
+                      (checkout) => checkout.bookId === entry.bookId
+                    );
+                    const label = alreadyCheckedOut
+                      ? "Already checked out"
+                      : alreadyRequested
                       ? "Requested"
                       : entry.available > 0
                       ? "Request checkout"
@@ -643,7 +689,7 @@ export default function Library({ user }) {
                       <button
                         type="button"
                         onClick={(event) => handleRequest(event, entry.bookId)}
-                        disabled={alreadyRequested}
+                        disabled={alreadyRequested || alreadyCheckedOut}
                       >
                         {label}
                       </button>
@@ -661,7 +707,7 @@ export default function Library({ user }) {
         <section className="panel">
           <h2>Requests</h2>
           <div className="stack">
-            {requests.map((request) => {
+            {visibleRequests.map((request) => {
               const book = catalog.find((item) => item.id === request.bookId);
               const student = students.find((item) => item.id === request.studentId);
 
@@ -685,42 +731,46 @@ export default function Library({ user }) {
                 </div>
               );
             })}
-            {!requests.length && <div className="empty">No requests.</div>}
+            {!visibleRequests.length && <div className="empty">No requests.</div>}
           </div>
         </section>
       )}
 
       {isTeacher && (
         <section className="panel">
-          <h2>Active Checkouts</h2>
+          <h2>Returns</h2>
           <div className="stack">
-            {activeCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
-              const student = students.find((item) => item.id === checkout.studentId);
+            {activeCheckouts
+              .filter((checkout) => checkout.returnRequested)
+              .map((checkout) => {
+                const book = catalog.find((item) => item.id === checkout.bookId);
+                const student = students.find((item) => item.id === checkout.studentId);
 
-              return (
-                <div key={checkout.id} className="row row--stack">
-                  <div>
-                    <strong>{book?.title}</strong> {student?.name ? `• ${student.name}` : ""}
-                    {checkout.returnRequested && <span className="tag tag--alert">Return requested</span>}
+                return (
+                  <div key={checkout.id} className="row row--stack">
+                    <div>
+                      <strong>{book?.title}</strong> {student?.name ? `• ${student.name}` : ""}
+                      <span className="tag tag--alert">Return requested</span>
+                    </div>
+                    <div className="row__actions">
+                      <input
+                        type="text"
+                        placeholder="Condition note"
+                        value={returnNotes[checkout.id] || ""}
+                        onChange={(event) => {
+                          setReturnNotes((prev) => ({ ...prev, [checkout.id]: event.target.value }));
+                        }}
+                      />
+                      <button type="button" onClick={(event) => handleReturn(event, checkout.id)}>
+                        Mark returned
+                      </button>
+                    </div>
                   </div>
-                  <div className="row__actions">
-                    <input
-                      type="text"
-                      placeholder="Condition note"
-                      value={returnNotes[checkout.id] || ""}
-                      onChange={(event) => {
-                        setReturnNotes((prev) => ({ ...prev, [checkout.id]: event.target.value }));
-                      }}
-                    />
-                    <button type="button" onClick={(event) => handleReturn(event, checkout.id)}>
-                      Mark returned
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {!activeCheckouts.length && <div className="empty">No active checkouts.</div>}
+                );
+              })}
+            {!activeCheckouts.some((checkout) => checkout.returnRequested) && (
+              <div className="empty">No return requests yet.</div>
+            )}
           </div>
         </section>
       )}
@@ -776,6 +826,17 @@ export default function Library({ user }) {
                       <div className="card__body">
                         <h3>{book?.title}</h3>
                         <p>{(book?.authors || []).join(", ")}</p>
+                        {isStudent && (
+                          <div className="card__actions">
+                            <button
+                              type="button"
+                              onClick={(event) => handleReturnRequest(event, checkout.id)}
+                              disabled={checkout.returnRequested}
+                            >
+                              {checkout.returnRequested ? "Waiting for teacher" : "Request return"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </article>
                   );
