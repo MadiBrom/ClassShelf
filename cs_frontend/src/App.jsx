@@ -9,25 +9,43 @@ import Teacher from "./components/Profiles/teacher.jsx";
 
 function App() {
   const [user, setUser] = useState(function () {
-    const stored = window.localStorage.getItem("classShelfUser");
-    if (!stored) {
-      return null;
+    const storedSession = window.sessionStorage.getItem("classShelfUser");
+    if (storedSession) {
+      try {
+        return JSON.parse(storedSession);
+      } catch (error) {
+        window.sessionStorage.removeItem("classShelfUser");
+      }
     }
+
+    const storedLocal = window.localStorage.getItem("classShelfUser");
+    if (!storedLocal) return null;
     try {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(storedLocal);
+      if (parsed?.remember) return parsed;
+      window.localStorage.removeItem("classShelfUser");
+      return null;
     } catch (error) {
       window.localStorage.removeItem("classShelfUser");
+      window.sessionStorage.removeItem("classShelfUser");
       return null;
     }
   });
 
-  function handleUserChange(nextUser) {
+  function handleUserChange(nextUser, options = {}) {
+    const { remember = false } = options;
     if (!nextUser) {
       window.localStorage.removeItem("classShelfUser");
+      window.sessionStorage.removeItem("classShelfUser");
       setUser(null);
       return;
     }
-    window.localStorage.setItem("classShelfUser", JSON.stringify(nextUser));
+    const storage = remember ? window.localStorage : window.sessionStorage;
+    const otherStorage = remember ? window.sessionStorage : window.localStorage;
+    const storedUser = remember ? { ...nextUser, remember: true } : nextUser;
+
+    otherStorage.removeItem("classShelfUser");
+    storage.setItem("classShelfUser", JSON.stringify(storedUser));
     setUser(nextUser);
   }
 
@@ -82,7 +100,7 @@ function App() {
             }
           />
 
-          <Route path="*" element={<div>404 bestie, page not found</div>} />
+          <Route path="*" element={<div>404 page not found</div>} />
         </Routes>
       </main>
     </div>
