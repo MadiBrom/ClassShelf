@@ -13,7 +13,7 @@ export default function Navbar ({ role, onLogout }) {
         )}
         {role && (
           <button type="button" onClick={onLogout}>
-            Log out ({role})
+            Log out
           </button>
         )}
       </div>

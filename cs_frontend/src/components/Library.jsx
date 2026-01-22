@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveRequest,
   createBook,
@@ -13,9 +13,12 @@ import {
 } from "../../../utils/api.js";
 
 const MAX_BAG = 5;
+const REQUEST_EXPIRY_MS = 5 * 60 * 1000;
+const REQUEST_PRUNE_INTERVAL_MS = 30 * 1000;
 
 export default function Library({ user }) {
   const isTeacher = user?.role === "teacher";
+  const isStudent = user?.role === "student";
 
   const [catalog, setCatalog] = useState([]);
   const [shelf, setShelf] = useState([]);
@@ -23,6 +26,7 @@ export default function Library({ user }) {
   const [activeStudentId, setActiveStudentId] = useState(null);
   const [requests, setRequests] = useState([]);
   const [checkouts, setCheckouts] = useState([]);
+  const [requestNow, setRequestNow] = useState(Date.now());
 
   const [shelfCode, setShelfCode] = useState((user?.shelfCode || "").toUpperCase());
   const [isRefreshingCode, setIsRefreshingCode] = useState(false);
@@ -36,7 +40,6 @@ export default function Library({ user }) {
   const [manualForm, setManualForm] = useState({
     title: "",
     authors: "",
-    isbn: "",
     description: "",
     coverUrl: "",
     genre: "",
@@ -73,7 +76,24 @@ export default function Library({ user }) {
       setCatalog(data.catalog || []);
       setShelf(data.shelf || []);
       setStudents(data.students || []);
-      setRequests(data.requests || []);
+      setRequests((prev) => {
+        const now = Date.now();
+        const pending = (data.requests || []).map((request) => ({
+          ...request,
+          status: request.status || "pending",
+        }));
+        const pendingIds = new Set(pending.map((request) => request.id));
+        const resolved = (prev || [])
+          .filter((request) => request.status !== "pending")
+          .map((request) => ({
+            ...request,
+            resolvedAt: request.resolvedAt || now,
+          }))
+          .filter((request) => now - request.resolvedAt < REQUEST_EXPIRY_MS)
+          .filter((request) => !pendingIds.has(request.id));
+
+        return [...pending, ...resolved];
+      });
       setCheckouts(data.checkouts || []);
 
       if (!isTeacher) {
@@ -95,6 +115,28 @@ export default function Library({ user }) {
   useEffect(() => {
     reloadLibrary();
   }, [reloadLibrary]);
+
+  useEffect(() => {
+    if (!user) {
+      setRequests([]);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRequestNow(Date.now());
+    }, REQUEST_PRUNE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const visibleRequests = useMemo(() => {
+    return (requests || []).filter((request) => {
+      if (request.status === "pending") return true;
+      const resolvedAt = request.resolvedAt || requestNow;
+      return requestNow - resolvedAt < REQUEST_EXPIRY_MS;
+    });
+  }, [requestNow, requests]);
 
   const shelfItems = useMemo(() => {
     return shelf.map((entry) => {
@@ -126,7 +168,6 @@ export default function Library({ user }) {
     if (!candidate) return null;
 
     return catalog.find((book) => {
-      if (book.isbn && candidate.isbn && book.isbn === candidate.isbn) return true;
       if (candidate.googleId && book.googleId === candidate.googleId) return true;
 
       return (
@@ -181,7 +222,7 @@ export default function Library({ user }) {
     }
 
     const localResults = catalog.filter((book) => {
-      const target = `${book.title} ${(book.authors || []).join(" ")} ${book.isbn || ""}`;
+      const target = `${book.title} ${(book.authors || []).join(" ")}`;
       return target.toLowerCase().includes(query.toLowerCase());
     });
 
@@ -205,7 +246,6 @@ export default function Library({ user }) {
         googleId: result.googleId,
         title: result.title,
         authors: result.authors,
-        isbn: result.isbn13,
         coverUrl: result.coverUrl,
         description: result.description,
         source: "google",
@@ -247,7 +287,6 @@ export default function Library({ user }) {
       authors: manualForm.authors
         ? manualForm.authors.split(",").map((value) => value.trim())
         : ["Unknown"],
-      isbn: manualForm.isbn.trim() || null,
       coverUrl: manualForm.coverUrl.trim() || null,
       description: manualForm.description.trim(),
       tags: {
@@ -265,7 +304,6 @@ export default function Library({ user }) {
       setManualForm({
         title: "",
         authors: "",
-        isbn: "",
         description: "",
         coverUrl: "",
         genre: "",
@@ -290,7 +328,6 @@ export default function Library({ user }) {
           googleId: book.googleId,
           title: book.title,
           authors: book.authors,
-          isbn: book.isbn,
           coverUrl: book.coverUrl,
           description: book.description,
           tags: { genre: "", readingLevel: "", interest: "" },
@@ -316,6 +353,12 @@ export default function Library({ user }) {
 
     if (studentCheckouts.length >= MAX_BAG) {
       setFeedback("Student already has 5 books. Return one before requesting more.");
+      return;
+    }
+
+    const alreadyCheckedOut = studentCheckouts.some((checkout) => checkout.bookId === bookId);
+    if (alreadyCheckedOut) {
+      setFeedback("Student already has this book checked out.");
       return;
     }
 
@@ -345,7 +388,28 @@ export default function Library({ user }) {
     setFeedback("");
 
     try {
-      await approveRequest(requestId);
+      const result = await approveRequest(requestId);
+      const requestStatus = result?.request?.status || "approved";
+
+      const resolvedAt = Date.now();
+      setRequests((prev) =>
+        prev.map((request) =>
+          request.id === requestId
+            ? { ...request, status: requestStatus, resolvedAt }
+            : request
+        )
+      );
+
+      if (result?.checkout) {
+        setCheckouts((prev) => [result.checkout, ...prev]);
+        setShelf((prev) =>
+          prev.map((entry) =>
+            entry.bookId === result.checkout.bookId
+              ? { ...entry, available: Math.max(0, entry.available - 1) }
+              : entry
+          )
+        );
+      }
       await reloadLibrary();
     } catch (error) {
       setFeedback(error.message || "Unable to approve request.");
@@ -356,7 +420,17 @@ export default function Library({ user }) {
     event.preventDefault();
 
     try {
-      await denyRequest(requestId);
+      const result = await denyRequest(requestId);
+      const requestStatus = result?.status || result?.request?.status || "denied";
+
+      const resolvedAt = Date.now();
+      setRequests((prev) =>
+        prev.map((request) =>
+          request.id === requestId
+            ? { ...request, status: requestStatus, resolvedAt }
+            : request
+        )
+      );
       await reloadLibrary();
     } catch (error) {
       setFeedback(error.message || "Unable to deny request.");
@@ -425,26 +499,6 @@ export default function Library({ user }) {
             </div>
           )}
         </div>
-
-        {isTeacher && (
-          <div className="library__controls">
-            <label className="control">
-              View student
-              <select
-                value={activeStudentId || ""}
-                onChange={(event) => setActiveStudentId(Number(event.target.value))}
-                disabled={!students.length}
-              >
-                {!students.length && <option value="">No students yet</option>}
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
       </header>
 
       {feedback && <div className="notice">{feedback}</div>}
@@ -457,14 +511,12 @@ export default function Library({ user }) {
           <form className="search" onSubmit={handleSearch}>
             <input
               type="search"
-              placeholder="Search by title, author, ISBN..."
+              placeholder="Search by title or author..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
             <button type="submit">Search</button>
           </form>
-
-          <p className="subtle">Searching your catalog first, then Google Books if nothing matches.</p>
 
           <div className="grid">
             {searchResults.map((result) => (
@@ -480,7 +532,6 @@ export default function Library({ user }) {
                 <div className="card__body">
                   <h3>{result.title}</h3>
                   <p>{(result.authors || []).join(", ")}</p>
-                  <p className="subtle">{result.isbn ? `ISBN ${result.isbn}` : "No ISBN listed"}</p>
                   <p className="subtle">{result.description}</p>
 
                   <div className="card__meta">
@@ -506,72 +557,83 @@ export default function Library({ user }) {
 
             {!searchResults.length && (
               <div className="empty">
-                {searchSource === "catalog"
-                  ? "Search to find books in your catalog or Google Books."
-                  : "No Google Books matches. Add it manually below."}
+                {searchSource === "catalog" ? (
+                  <p>Search to find books in your catalog or Google Books.</p>
+                ) : (
+                  <form className="manual" onSubmit={handleManualAdd}>
+                    <h3>Manual Entry</h3>
+
+                    <div className="manual__grid">
+                      <input
+                        type="text"
+                        placeholder="Title *"
+                        value={manualForm.title}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, title: event.target.value }))
+                        }
+                        required
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Authors (comma separated)"
+                        value={manualForm.authors}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, authors: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="url"
+                        placeholder="Cover URL"
+                        value={manualForm.coverUrl}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Genre"
+                        value={manualForm.genre}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, genre: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Reading level"
+                        value={manualForm.readingLevel}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, readingLevel: event.target.value }))
+                        }
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Interest"
+                        value={manualForm.interest}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, interest: event.target.value }))
+                        }
+                      />
+
+                      <textarea
+                        placeholder="Description"
+                        value={manualForm.description}
+                        onChange={(event) =>
+                          setManualForm((prev) => ({ ...prev, description: event.target.value }))
+                        }
+                      />
+                    </div>
+
+                    <button type="submit">Add & Save</button>
+                  </form>
+                )}
               </div>
             )}
           </div>
-
-          <form className="manual" onSubmit={handleManualAdd}>
-            <h3>Manual Entry</h3>
-            <div className="manual__grid">
-              <input
-                type="text"
-                placeholder="Title *"
-                value={manualForm.title}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, title: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Authors (comma separated)"
-                value={manualForm.authors}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, authors: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="ISBN"
-                value={manualForm.isbn}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, isbn: event.target.value }))}
-              />
-              <input
-                type="url"
-                placeholder="Cover URL"
-                value={manualForm.coverUrl}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, coverUrl: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Genre"
-                value={manualForm.genre}
-                onChange={(event) => setManualForm((prev) => ({ ...prev, genre: event.target.value }))}
-              />
-              <input
-                type="text"
-                placeholder="Reading level"
-                value={manualForm.readingLevel}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, readingLevel: event.target.value }))
-                }
-              />
-              <input
-                type="text"
-                placeholder="Interest"
-                value={manualForm.interest}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, interest: event.target.value }))
-                }
-              />
-              <textarea
-                placeholder="Description"
-                value={manualForm.description}
-                onChange={(event) =>
-                  setManualForm((prev) => ({ ...prev, description: event.target.value }))
-                }
-              />
-            </div>
-            <button type="submit">Add & Save</button>
-          </form>
         </section>
       )}
 
@@ -594,69 +656,58 @@ export default function Library({ user }) {
                   Total: {entry.total} | Available: {entry.available} | Checked out: {entry.checkedOut}
                 </p>
 
-                {isTeacher ? (
-                  <div className="card__actions">
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, 1)}>
-                      +
-                    </button>
-                    <button type="button" onClick={() => adjustCopies(entry.bookId, -1)}>
-                      -
-                    </button>
-                  </div>
-                ) : (
-                  <div className="card__actions">
-                    <button type="button" onClick={(event) => handleRequest(event, entry.bookId)}>
-                      {entry.available > 0 ? "Request checkout" : "Join waitlist"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+              {isTeacher ? (
+                <div className="card__actions">
+                  <button type="button" onClick={() => adjustCopies(entry.bookId, 1)}>
+                    +
+                  </button>
+                  <button type="button" onClick={() => adjustCopies(entry.bookId, -1)}>
+                    -
+                  </button>
+                </div>
+              ) : (
+                <div className="card__actions">
+                  {(() => {
+                    const alreadyRequested = requests.some(
+                      (request) =>
+                        request.bookId === entry.bookId &&
+                        request.studentId === activeStudentId &&
+                        request.status === "pending"
+                    );
+                    const alreadyCheckedOut = studentCheckouts.some(
+                      (checkout) => checkout.bookId === entry.bookId
+                    );
+                    const label = alreadyCheckedOut
+                      ? "Already checked out"
+                      : alreadyRequested
+                      ? "Requested"
+                      : entry.available > 0
+                      ? "Request checkout"
+                      : "Join waitlist";
 
-      {!isTeacher && (
-        <section className="panel">
-          <h2>
-            My Book Bag ({studentCheckouts.length}/{MAX_BAG})
-          </h2>
-
-          <div className="grid">
-            {studentCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
-
-              return (
-                <article key={checkout.id} className="card">
-                  <div className="card__body">
-                    <h3>{book?.title}</h3>
-                    <p>{(book?.authors || []).join(", ")}</p>
-                    <p className="subtle">
-                      Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
-                    </p>
-                    <div className="card__actions">
+                    return (
                       <button
                         type="button"
-                        onClick={(event) => handleReturnRequest(event, checkout.id)}
-                        disabled={checkout.returnRequested}
+                        onClick={(event) => handleRequest(event, entry.bookId)}
+                        disabled={alreadyRequested || alreadyCheckedOut}
                       >
-                        Request return
+                        {label}
                       </button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-            {!studentCheckouts.length && <div className="empty">No books checked out.</div>}
-          </div>
-        </section>
-      )}
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+      </section>
 
       {isTeacher && (
         <section className="panel">
           <h2>Requests</h2>
           <div className="stack">
-            {requests.map((request) => {
+            {visibleRequests.map((request) => {
               const book = catalog.find((item) => item.id === request.bookId);
               const student = students.find((item) => item.id === request.studentId);
 
@@ -680,65 +731,89 @@ export default function Library({ user }) {
                 </div>
               );
             })}
-            {!requests.length && <div className="empty">No requests.</div>}
+            {!visibleRequests.length && <div className="empty">No requests.</div>}
           </div>
         </section>
       )}
 
       {isTeacher && (
         <section className="panel">
-          <h2>Active Checkouts</h2>
+          <h2>Returns</h2>
           <div className="stack">
-            {activeCheckouts.map((checkout) => {
-              const book = catalog.find((item) => item.id === checkout.bookId);
-              const student = students.find((item) => item.id === checkout.studentId);
+            {activeCheckouts
+              .filter((checkout) => checkout.returnRequested)
+              .map((checkout) => {
+                const book = catalog.find((item) => item.id === checkout.bookId);
+                const student = students.find((item) => item.id === checkout.studentId);
 
-              return (
-                <div key={checkout.id} className="row row--stack">
-                  <div>
-                    <strong>{book?.title}</strong> {student?.name ? `• ${student.name}` : ""}
-                    {checkout.returnRequested && <span className="tag tag--alert">Return requested</span>}
+                return (
+                  <div key={checkout.id} className="row row--stack">
+                    <div>
+                      <strong>{book?.title}</strong> {student?.name ? `• ${student.name}` : ""}
+                      <span className="tag tag--alert">Return requested</span>
+                    </div>
+                    <div className="row__actions">
+                      <input
+                        type="text"
+                        placeholder="Condition note"
+                        value={returnNotes[checkout.id] || ""}
+                        onChange={(event) => {
+                          setReturnNotes((prev) => ({ ...prev, [checkout.id]: event.target.value }));
+                        }}
+                      />
+                      <button type="button" onClick={(event) => handleReturn(event, checkout.id)}>
+                        Mark returned
+                      </button>
+                    </div>
                   </div>
-                  <div className="row__actions">
-                    <input
-                      type="text"
-                      placeholder="Condition note"
-                      value={returnNotes[checkout.id] || ""}
-                      onChange={(event) => {
-                        setReturnNotes((prev) => ({ ...prev, [checkout.id]: event.target.value }));
-                      }}
-                    />
-                    <button type="button" onClick={(event) => handleReturn(event, checkout.id)}>
-                      Mark returned
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {!activeCheckouts.length && <div className="empty">No active checkouts.</div>}
+                );
+              })}
+            {!activeCheckouts.some((checkout) => checkout.returnRequested) && (
+              <div className="empty">No return requests yet.</div>
+            )}
           </div>
         </section>
       )}
 
-      {isTeacher && (
+      {(isTeacher || isStudent) && (
         <section className="panel">
-          <h2>Student</h2>
+          <h2>{isTeacher ? "Student" : "My Book Bag"}</h2>
 
-          {!students.length && (
+          {isTeacher && !students.length && (
             <div className="empty">
               No students yet. Share your class code with students so they can join your class.
             </div>
           )}
 
-          {students.length > 0 && !activeStudentId && (
+          {isTeacher && students.length > 0 && !activeStudentId && (
             <div className="empty">Pick a student from the dropdown to view their bag and requests.</div>
+          )}
+
+          {isStudent && !activeStudentId && (
+            <div className="empty">Loading your book bag...</div>
           )}
 
           {activeStudentId && (
             <>
-              <p className="subtle">
-                Viewing: <strong>{activeStudent?.name || "Student"}</strong>
-              </p>
+              {isTeacher && (
+          <div className="library__controls">
+            <label className="control">
+              View student
+              <select
+                value={activeStudentId || ""}
+                onChange={(event) => setActiveStudentId(Number(event.target.value))}
+                disabled={!students.length}
+              >
+                {!students.length && <option value="">No students yet</option>}
+                {students.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {student.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+              )}
 
               <h3>
                 Book Bag ({studentCheckouts.length}/{MAX_BAG})
@@ -751,9 +826,17 @@ export default function Library({ user }) {
                       <div className="card__body">
                         <h3>{book?.title}</h3>
                         <p>{(book?.authors || []).join(", ")}</p>
-                        <p className="subtle">
-                          Status: {checkout.returnRequested ? "Return requested" : "Checked out"}
-                        </p>
+                        {isStudent && (
+                          <div className="card__actions">
+                            <button
+                              type="button"
+                              onClick={(event) => handleReturnRequest(event, checkout.id)}
+                              disabled={checkout.returnRequested}
+                            >
+                              {checkout.returnRequested ? "Waiting for teacher" : "Request return"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </article>
                   );
@@ -767,4 +850,3 @@ export default function Library({ user }) {
     </div>
   );
 }
-Library;

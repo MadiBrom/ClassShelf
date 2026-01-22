@@ -7,6 +7,7 @@ const DRAFT_STORAGE_KEY = "classShelfLoginDraft";
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
@@ -18,6 +19,7 @@ export default function Login({ onLogin }) {
       const draft = JSON.parse(stored);
       if (draft?.email) setEmail(draft.email);
       if (draft?.password) setPassword(draft.password);
+      if (typeof draft?.rememberMe === "boolean") setRememberMe(draft.rememberMe);
     } catch (err) {
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
     }
@@ -26,9 +28,9 @@ export default function Login({ onLogin }) {
   useEffect(() => {
     window.sessionStorage.setItem(
       DRAFT_STORAGE_KEY,
-      JSON.stringify({ email, password })
+      JSON.stringify({ email, password, rememberMe })
     );
-  }, [email, password]);
+  }, [email, password, rememberMe]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -36,7 +38,7 @@ export default function Login({ onLogin }) {
 
     try {
       const user = await loginUser({ email, password });
-      onLogin(user);
+      onLogin(user, { remember: rememberMe });
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
 
       if (user.role === "teacher") navigate("/teacher");
@@ -72,6 +74,15 @@ export default function Login({ onLogin }) {
             onChange={(event) => setPassword(event.target.value)}
             placeholder="••••••••"
           />
+        </label>
+
+        <label className="--checkbox">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(event) => setRememberMe(event.target.checked)}
+          />
+          Remember me on this device
         </label>
 
         <button type="submit">Login</button>

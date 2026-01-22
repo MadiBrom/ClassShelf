@@ -43,14 +43,14 @@ function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || "";
   const [scheme, token] = authHeader.split(" ");
   if (scheme !== "Bearer" || !token) {
-    return res.status(401).json({ error: "Missing token." });
+    return res.status(401);
   }
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     return next();
   } catch (error) {
-    return res.status(401).json({ error: "Invalid token." });
+    return res.status(401);
   }
 }
 
@@ -108,7 +108,7 @@ async function loadLibraryData(teacherId) {
   });
   const requests = bookIds.length
     ? await prisma.request.findMany({
-        where: { bookId: { in: bookIds } },
+        where: { bookId: { in: bookIds }, status: 'pending' },
         orderBy: { createdAt: 'asc' },
       })
     : [];
@@ -177,8 +177,13 @@ app.post('/api/register', async (req, res) => {
     }
 
     if (role === "student") {
+      const normalizedShelfCode = String(shelfCode || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+
       const teacher = await prisma.teacher.findUnique({
-        where: { shelfCode: shelfCode.trim().toUpperCase() },
+        where: { shelfCode: normalizedShelfCode },
       });
 
       if (!teacher) {
@@ -402,6 +407,32 @@ app.post('/api/requests', async (req, res) => {
   }
 
   try {
+    const pendingRequest = await prisma.request.findFirst({
+      where: {
+        bookId: Number(bookId),
+        studentId: Number(studentId),
+        status: 'pending',
+      },
+    });
+
+    if (pendingRequest) {
+      res.status(400).json({ error: 'Request already pending for this student.' });
+      return;
+    }
+
+    const activeCheckout = await prisma.checkout.findFirst({
+      where: {
+        bookId: Number(bookId),
+        studentId: Number(studentId),
+        status: 'checked_out',
+      },
+    });
+
+    if (activeCheckout) {
+      res.status(400).json({ error: 'Student already has this book checked out.' });
+      return;
+    }
+
     const request = await prisma.request.create({
       data: {
         bookId: Number(bookId),
@@ -436,6 +467,18 @@ app.post('/api/requests/:id/approve', async (req, res) => {
         return { error: 'Request not found.' };
       }
 
+      const existingCheckout = await tx.checkout.findFirst({
+        where: {
+          bookId: request.bookId,
+          studentId: request.studentId,
+          status: 'checked_out',
+        },
+      });
+
+      if (existingCheckout) {
+        return { error: 'Student already has this book checked out.' };
+      }
+
       const book = await tx.book.findUnique({
         where: { id: request.bookId },
       });
@@ -465,12 +508,18 @@ app.post('/api/requests/:id/approve', async (req, res) => {
         },
       });
 
-      const updatedRequest = await tx.request.update({
+      await tx.request.delete({
         where: { id: request.id },
-        data: { status: 'approved' },
       });
 
-      return { checkout, request: updatedRequest };
+      const approvedRequest = {
+        id: request.id,
+        bookId: request.bookId,
+        studentId: request.studentId,
+        status: 'approved',
+      };
+
+      return { checkout, request: approvedRequest };
     });
 
     if (result.error) {
@@ -492,15 +541,24 @@ app.post('/api/requests/:id/deny', async (req, res) => {
   }
 
   try {
-    const request = await prisma.request.update({
+    const request = await prisma.request.findUnique({
       where: { id: requestId },
-      data: { status: 'denied' },
     });
+
+    if (!request) {
+      res.status(404).json({ error: 'Request not found.' });
+      return;
+    }
+
+    await prisma.request.delete({
+      where: { id: requestId },
+    });
+
     res.json({
       id: request.id,
       bookId: request.bookId,
       studentId: request.studentId,
-      status: request.status,
+      status: 'denied',
     });
   } catch (error) {
     res.status(500).json({ error: 'Unable to deny request.' });

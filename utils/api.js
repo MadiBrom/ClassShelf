@@ -3,26 +3,10 @@ const OPEN_LIBRARY_FIELDS = [
   "key",
   "title",
   "author_name",
-  "isbn",
   "cover_i",
   "first_sentence",
 ].join(",");
 const API_URL = import.meta.env.VITE_DATABASE_URL || "http://localhost:3000";
-
-function pickIsbn13(isbnList) {
-  if (!Array.isArray(isbnList)) return null;
-  const normalized = isbnList
-    .map(function (value) {
-      return String(value || "").replace(/[^0-9X]/gi, "");
-    })
-    .filter(Boolean);
-
-  const isbn13 = normalized.find(function (value) {
-    return value.length === 13 && /^\\d+$/.test(value);
-  });
-
-  return isbn13 || null;
-}
 
 function getFirstSentence(raw) {
   if (!raw) return "";
@@ -31,24 +15,19 @@ function getFirstSentence(raw) {
   return "";
 }
 
-function coverUrlFromDoc(doc, isbn13) {
+function coverUrlFromDoc(doc) {
   if (doc?.cover_i) {
     return `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
-  }
-  if (isbn13) {
-    return `https://covers.openlibrary.org/b/isbn/${isbn13}-M.jpg`;
   }
   return "";
 }
 
 function mapOpenLibraryDoc(doc) {
-  const isbn13 = pickIsbn13(doc?.isbn);
   return {
     googleId: doc?.key || null,
     title: doc?.title || "",
     authors: Array.isArray(doc?.author_name) ? doc.author_name : [],
-    isbn13,
-    coverUrl: coverUrlFromDoc(doc, isbn13),
+    coverUrl: coverUrlFromDoc(doc),
     description: getFirstSentence(doc?.first_sentence),
   };
 }
@@ -76,12 +55,24 @@ export async function searchGoogleBooks(rawQuery) {
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 function getStoredUser() {
-  try {
-    const stored = window.localStorage.getItem("classShelfUser");
-    return stored ? JSON.parse(stored) : null;
-  } catch (error) {
-    return null;
-  }
+  const readStored = (storage) => {
+    try {
+      const stored = storage.getItem("classShelfUser");
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      storage.removeItem("classShelfUser");
+      return null;
+    }
+  };
+
+  const sessionUser = readStored(window.sessionStorage);
+  if (sessionUser) return sessionUser;
+
+  const localUser = readStored(window.localStorage);
+  if (localUser?.remember) return localUser;
+
+  if (localUser) window.localStorage.removeItem("classShelfUser");
+  return null;
 }
 
 function getAuthToken() {
@@ -106,6 +97,7 @@ async function apiRequest(path, options) {
     });
     if (response.status === 401) {
       window.localStorage.removeItem("classShelfUser");
+      window.sessionStorage.removeItem("classShelfUser");
     }
     const message = payload?.error || payload?.message || "Request failed.";
     throw new Error(message);

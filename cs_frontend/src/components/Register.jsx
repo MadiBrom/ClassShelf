@@ -17,7 +17,9 @@ export default function Register({ onRegister }) {
 
     try {
       const payload = { role, name, email, password };
-      if (role === "student") payload.shelfCode = shelfCode.trim();
+      if (role === "student") {
+        payload.shelfCode = shelfCode.replace(/\s+/g, "").trim();
+      }
 
       const user = await registerUser(payload);
       onRegister(user);
