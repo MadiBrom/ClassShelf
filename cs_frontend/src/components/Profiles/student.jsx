@@ -1,4 +1,4 @@
-import Library from "../library.jsx";
+import Library from "../Library.jsx";
 
 function Student({ user }) {
   return <Library initialRole="student" user={user} />;
